@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ログイン - Patho Record</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <!-- Phosphor Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.2/src/regular/style.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.2/src/bold/style.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.2/src/fill/style.css" />
+</head>
+<body>
+    <!-- スプラッシュスクリーン -->
+    <div id="splash-screen">
+        <div class="splash-shapes">
+            <!-- Shape 1: Rainy Day -->
+            <img src="{{ url_for('static', filename='images/splash/shape-1.png') }}" class="shape shape-1" alt="Rainy Day">
+            
+            <!-- Shape 2: Poncho Child -->
+            <img src="{{ url_for('static', filename='images/splash/shape-2.png') }}" class="shape shape-2" alt="Poncho Child">
+
+            <!-- Shape 3: Frog with Leaf -->
+            <img src="{{ url_for('static', filename='images/splash/shape-3.png') }}" class="shape shape-3" alt="Frog with Leaf">
+
+            <!-- Shape 4: Flower Kids -->
+            <img src="{{ url_for('static', filename='images/splash/shape-4.png') }}" class="shape shape-4" alt="Flower Kids">
+        </div>
+        <div class="splash-logo"><i class="ph-bold ph-cube"></i></div>
+        <div class="splash-title">Patho Record</div>
+    </div>
+
+    <div class="login-container">
+        <div class="login-card">
+            <div class="login-logo"><i class="ph-bold ph-flask"></i></div>
+            <h1 class="login-title">Patho Record</h1>
+            <p class="login-subtitle">ユーザーを選択してください</p>
+
+            <div class="user-grid" id="userGrid">
+                {% for user in users %}
+                <button class="user-button {{ 'has-password' if user.has_password else '' }}"
+                        onclick="selectUser({{ user.id }}, '{{ user.name }}', {{ 'true' if user.has_password else 'false' }})"
+                        data-user-id="{{ user.id }}">
+                    {% if user.is_admin %}
+                    <span class="user-icon"><i class="ph-fill ph-user-circle-gear"></i></span>
+                    {% else %}
+                    <span class="user-icon"><i class="ph-fill ph-user-circle"></i></span>
+                    {% endif %}
+                    <span class="user-name">{{ user.name }}</span>
+                    {% if user.has_password %}
+                    <span class="lock-icon"><i class="ph-fill ph-lock-simple"></i></span>
+                    {% endif %}
+                </button>
+                {% endfor %}
+
+                <button class="user-button add-user-btn" onclick="showAddUserModal()">
+                    <span class="user-icon"><i class="ph-bold ph-user-plus"></i></span>
+                    <span class="user-name">新規ユーザー</span>
+                </button>
+            </div>
+
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                    <div class="badge badge-{{ 'danger' if category == 'error' else 'info' }}" style="margin-top: 16px;">
+                        {{ message }}
+                    </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+        </div>
+    </div>
+
+    <!-- パスワード入力モーダル -->
+    <div class="modal-overlay" id="passwordModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title"><i class="ph ph-lock-key"></i> パスワード入力</h3>
+                <button class="modal-close" onclick="hidePasswordModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="text-center mb-4" id="passwordUserName">ユーザー名</p>
+                <input type="hidden" id="passwordUserId">
+                <div class="form-group">
+                    <label class="form-label">パスワード</label>
+                    <input type="password" class="form-input" id="passwordInput" placeholder="パスワードを入力...">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="hidePasswordModal()">キャンセル</button>
+                <button class="btn btn-primary" onclick="submitPassword()">ログイン</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ユーザー追加モーダル -->
+    <div class="modal-overlay" id="addUserModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title"><i class="ph ph-user-plus"></i> 新規ユーザー追加</h3>
+                <button class="modal-close" onclick="hideAddUserModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">ユーザー名</label>
+                    <input type="text" class="form-input" id="newUserName" placeholder="名前を入力...">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="hideAddUserModal()">キャンセル</button>
+                <button class="btn btn-primary" onclick="addUser()">追加</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- トースト -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script>
+        // スプラッシュスクリーン制御
+        document.addEventListener('DOMContentLoaded', () => {
+            const splash = document.getElementById('splash-screen');
+            
+            // シェイプのランダム配置とアニメーション設定
+            const shapes = Array.from(document.querySelectorAll('.shape'));
+            
+            // 画面を4つのゾーンに分けて配置（中央のロゴと被らないように）
+            const zones = [
+                { name: 'TL', minX: 5, maxX: 35, minY: 5, maxY: 35 },   // 左上
+                { name: 'TR', minX: 65, maxX: 85, minY: 5, maxY: 35 },  // 右上
+                { name: 'BL', minX: 5, maxX: 35, minY: 60, maxY: 85 },  // 左下
+                { name: 'BR', minX: 65, maxX: 85, minY: 60, maxY: 85 }  // 右下
+            ];
+            
+            // シャッフル関数
+            function shuffle(array) {
+                for (let i = array.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [array[i], array[j]] = [array[j], array[i]];
+                }
+                return array;
+            }
+            
+            // ゾーンをシャッフルしてシェイプに割り当て
+            const shuffledZones = shuffle([...zones]);
+            const shuffledShapes = shuffle(shapes); // シェイプもシャッフル
+
+            shuffledShapes.forEach((shape, index) => {
+                // ゾーンが足りなくなったらランダムに選ぶ（今回は4つなのでちょうどよい）
+                const zone = shuffledZones[index % shuffledZones.length];
+                
+                // ゾーン内でランダムな位置を計算
+                const randomX = Math.floor(Math.random() * (zone.maxX - zone.minX + 1)) + zone.minX;
+                const randomY = Math.floor(Math.random() * (zone.maxY - zone.minY + 1)) + zone.minY;
+                
+                shape.style.left = `${randomX}%`;
+                shape.style.top = `${randomY}%`;
+                
+                // アニメーションのタイミングをランダム化 (15s - 30s)
+                const duration = Math.floor(Math.random() * 16) + 15;
+                shape.style.animationDuration = `${duration}s`;
+                
+                // 遅延をランダム化 (-20s - 0s) して動きをずらす
+                const delay = Math.floor(Math.random() * 21) * -1;
+                shape.style.animationDelay = `${delay}s`;
+            });
+
+            setTimeout(() => {
+                splash.classList.add('hidden');
+                // アニメーション完了後にDOMから削除（オプション）
+                setTimeout(() => {
+                    splash.style.display = 'none';
+                }, 800);
+            }, 2000); // 2秒後にフェードアウト
+        });
+
+        // ユーザー選択
+        function selectUser(userId, userName, hasPassword) {
+            if (hasPassword) {
+                // パスワード入力モーダルを表示
+                document.getElementById('passwordUserId').value = userId;
+                document.getElementById('passwordUserName').textContent = userName + ' さん';
+                document.getElementById('passwordModal').classList.add('active');
+                document.getElementById('passwordInput').focus();
+            } else {
+                // パスワードなしでログイン
+                login(userId, '');
+            }
+        }
+
+        // ログイン実行
+        function login(userId, password) {
+            fetch('/login', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify({ user_id: userId, password: password })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    window.location.href = data.redirect;
+                } else if (data.needs_password) {
+                    // パスワードが必要
+                    document.getElementById('passwordUserId').value = userId;
+                    document.getElementById('passwordModal').classList.add('active');
+                    document.getElementById('passwordInput').focus();
+                } else {
+                    showToast(data.error, 'error');
+                }
+            })
+            .catch(error => {
+                showToast('エラーが発生しました', 'error');
+            });
+        }
+
+        // パスワード送信
+        function submitPassword() {
+            const userId = document.getElementById('passwordUserId').value;
+            const password = document.getElementById('passwordInput').value;
+
+            if (!password) {
+                showToast('パスワードを入力してください', 'error');
+                return;
+            }
+
+            login(userId, password);
+        }
+
+        // パスワードモーダル非表示
+        function hidePasswordModal() {
+            document.getElementById('passwordModal').classList.remove('active');
+            document.getElementById('passwordInput').value = '';
+        }
+
+        // ユーザー追加モーダル表示
+        function showAddUserModal() {
+            document.getElementById('addUserModal').classList.add('active');
+            document.getElementById('newUserName').focus();
+        }
+
+        // ユーザー追加モーダル非表示
+        function hideAddUserModal() {
+            document.getElementById('addUserModal').classList.remove('active');
+            document.getElementById('newUserName').value = '';
+        }
+
+        // ユーザー追加
+        function addUser() {
+            const name = document.getElementById('newUserName').value.trim();
+            if (!name) {
+                showToast('名前を入力してください', 'error');
+                return;
+            }
+
+            fetch('/register', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify({ name: name })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showToast('ユーザーを追加しました', 'success');
+                    hideAddUserModal();
+
+                    // ボタンを追加
+                    const grid = document.getElementById('userGrid');
+                    const addBtn = grid.querySelector('.add-user-btn');
+                    const newBtn = document.createElement('button');
+                    newBtn.className = 'user-button';
+                    newBtn.onclick = () => selectUser(data.user.id, data.user.name, false);
+                    newBtn.innerHTML = `
+                        <span class="user-icon"><i class="ph-fill ph-user-circle"></i></span>
+                        <span class="user-name">${data.user.name}</span>
+                    `;
+                    grid.insertBefore(newBtn, addBtn);
+                } else {
+                    showToast(data.error, 'error');
+                }
+            })
+            .catch(error => {
+                showToast('エラーが発生しました', 'error');
+            });
+        }
+
+        // トースト表示
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            const iconClass = type === 'success' ? 'ph-check' : type === 'error' ? 'ph-x' : 'ph-info';
+            toast.innerHTML = `
+                <i class="ph ${iconClass}"></i>
+                <span>${message}</span>
+            `;
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        // Enterキーでパスワード送信
+        document.getElementById('passwordInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                submitPassword();
+            }
+        });
+
+        // Enterキーでユーザー追加
+        document.getElementById('newUserName').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                addUser();
+            }
+        });
+
+        // モーダル外クリックで閉じる
+        document.getElementById('addUserModal').addEventListener('click', function(e) {
+            if (e.target === this) hideAddUserModal();
+        });
+        document.getElementById('passwordModal').addEventListener('click', function(e) {
+            if (e.target === this) hidePasswordModal();
+        });
+    </script>
+</body>
+</html>

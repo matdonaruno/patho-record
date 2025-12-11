@@ -1,0 +1,947 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Patho Record</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <!-- Phosphor Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.2/src/regular/style.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.2/src/bold/style.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.2/src/fill/style.css" />
+</head>
+<body>
+    <!-- ヘッダー -->
+    <header class="header">
+        <div class="header-left">
+            <span class="logo"><i class="ph-bold ph-flask"></i> Patho Record</span>
+        </div>
+        <div class="header-right">
+            <div class="status-badges">
+                {% if overdue_count > 0 %}
+                <span class="badge badge-danger">
+                    期限超過 {{ overdue_count }}件
+                </span>
+                {% endif %}
+                {% if unreturned_count > 0 %}
+                <span class="badge badge-warning">
+                    未返却 {{ unreturned_count }}件
+                </span>
+                {% endif %}
+                <span class="badge {{ 'badge-success' if usb_status.connected else 'badge-danger' }}">
+                    USB: {{ '接続中' if usb_status.connected else '未接続' }}
+                </span>
+            </div>
+            <span class="user-badge">{{ user.name }}</span>
+            <a href="{{ url_for('settings') }}" class="btn btn-secondary btn-sm">設定</a>
+            <a href="{{ url_for('logout') }}" class="btn btn-secondary btn-sm">ログアウト</a>
+        </div>
+    </header>
+
+    <main class="main-container">
+        <!-- メインタブ -->
+        <div class="main-tabs">
+            <button class="main-tab active" data-tab="scan" onclick="switchMainTab('scan')">
+                <i class="ph ph-barcode"></i> スキャン登録
+            </button>
+            <button class="main-tab" data-tab="return" onclick="switchMainTab('return')">
+                <i class="ph ph-arrow-u-up-left"></i> 返却処理
+                <span class="tab-badge" id="incompleteCount">0</span>
+            </button>
+        </div>
+
+        <!-- ============================================================
+             タブ1: スキャン登録
+             ============================================================ -->
+        <div class="tab-content active" id="tabScan">
+            <!-- スキャン入力カード -->
+            <div class="card scan-card">
+                <div class="card-body">
+                    <form id="scanForm" onsubmit="submitScan(event)">
+                        <!-- メインバーコード入力エリア -->
+                        <div class="barcode-input-wrapper" id="barcodeWrapper">
+                            <div class="barcode-icon">
+                                <i class="ph-bold ph-barcode"></i>
+                            </div>
+                            <input type="text"
+                                   class="barcode-input"
+                                   id="barcodeInput"
+                                   placeholder="バーコードをスキャン..."
+                                   autocomplete="off">
+                            <div class="scan-indicator">
+                                <i class="ph ph-scan"></i>
+                                <span>スキャン待機中</span>
+                            </div>
+                        </div>
+
+                        <!-- サブ入力エリア -->
+                        <div class="sub-inputs">
+                            <div class="sub-input-group">
+                                <label class="form-label">個数</label>
+                                <div class="quantity-stepper">
+                                    <button type="button" class="stepper-btn" onclick="updateQuantity(-1)">
+                                        <i class="ph-bold ph-minus"></i>
+                                    </button>
+                                    <input type="number" class="form-input stepper-input" id="quantityInput"
+                                           value="1" min="1" required readonly>
+                                    <button type="button" class="stepper-btn" onclick="updateQuantity(1)">
+                                        <i class="ph-bold ph-plus"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="sub-input-group sub-input-memo">
+                                <label class="form-label">メモ</label>
+                                <input type="text" class="form-input" id="notesInput" placeholder="備考があれば入力...">
+                            </div>
+                            <button type="submit" class="btn btn-primary btn-register">
+                                <i class="ph-bold ph-plus-circle"></i>
+                                <span>登録</span>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- 履歴カード -->
+            <div class="card">
+                <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                    <h2 class="card-title"><i class="ph ph-clock-counter-clockwise"></i> スキャン履歴</h2>
+                    <div class="search-bar">
+                        <input type="text" class="form-input search-input" id="searchInput"
+                               placeholder="検索...">
+                        <button class="btn btn-secondary btn-sm" onclick="loadHistory()">検索</button>
+                        <a href="/export/csv" class="btn btn-success btn-sm" id="exportBtn">CSV</a>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <!-- フィルタータブ -->
+                    <div class="filter-tabs">
+                        <button class="filter-tab active" data-filter="all" onclick="setFilter('all')">
+                            全件
+                        </button>
+                        <button class="filter-tab" data-filter="today" onclick="setFilter('today')">
+                            今日
+                        </button>
+                        <button class="filter-tab" data-filter="unreturned" onclick="setFilter('unreturned')">
+                            未返却
+                            <span class="count" id="unreturnedCount">{{ unreturned_count }}</span>
+                        </button>
+                        <button class="filter-tab" data-filter="overdue" onclick="setFilter('overdue')">
+                            期限超過
+                            <span class="count" id="overdueCount">{{ overdue_count }}</span>
+                        </button>
+                    </div>
+
+                    <!-- テーブル -->
+                    <div class="table-container">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>バーコード</th>
+                                    <th>個数</th>
+                                    <th>スキャン者</th>
+                                    <th>スキャン日時</th>
+                                    <th>返却期限</th>
+                                    <th>結果</th>
+                                    <th>ブロック個数</th>
+                                    <th>メモ</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="historyTable">
+                                <tr>
+                                    <td colspan="10" class="text-center">
+                                        <div class="loading">
+                                            <div class="spinner"></div>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- ページネーション -->
+                    <div class="pagination" id="pagination"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================================
+             タブ2: 返却処理
+             ============================================================ -->
+        <div class="tab-content" id="tabReturn">
+            <div class="card">
+                <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                    <h2 class="card-title"><i class="ph ph-arrow-u-up-left"></i> 返却処理</h2>
+                    <div class="search-bar">
+                        <input type="text" class="form-input search-input" id="returnSearchInput"
+                               placeholder="バーコード・メモで検索...">
+                        <select class="form-input" id="returnSortSelect" onchange="loadReturnList()">
+                            <option value="newest">新しい順</option>
+                            <option value="oldest">古い順</option>
+                            <option value="overdue">期限超過順</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <p class="return-hint">
+                        <i class="ph ph-hand-pointing"></i>
+                        結果はクリックで切り替え、ブロックは個数を入力（0=未返却）
+                    </p>
+
+                    <!-- 返却一覧テーブル -->
+                    <div class="table-container">
+                        <table class="table return-table">
+                            <thead>
+                                <tr>
+                                    <th style="width: 60px;">ID</th>
+                                    <th>バーコード / メモ</th>
+                                    <th style="width: 100px;">スキャン日</th>
+                                    <th style="width: 100px;">返却期限</th>
+                                    <th style="width: 100px;">結果返却</th>
+                                    <th style="width: 120px;">ブロック個数</th>
+                                </tr>
+                            </thead>
+                            <tbody id="returnTable">
+                                <tr>
+                                    <td colspan="6" class="text-center">
+                                        <div class="loading">
+                                            <div class="spinner"></div>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- ページネーション -->
+                    <div class="pagination" id="returnPagination"></div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- フッター -->
+    <footer class="footer">
+        <div class="footer-item">
+            <span>USB:</span>
+            <span class="badge {{ 'badge-success' if usb_status.connected else 'badge-danger' }}">
+                {{ usb_status.mount_point if usb_status.connected else '未接続' }}
+            </span>
+        </div>
+        <div class="footer-item">
+            <span>最終バックアップ:</span>
+            <span id="lastBackup">{{ last_backup.modified[:16] if last_backup else '未実行' }}</span>
+        </div>
+        <div class="footer-item">
+            <button class="btn btn-secondary btn-sm" onclick="runBackup()">今すぐバックアップ</button>
+        </div>
+    </footer>
+
+    <!-- 編集モーダル -->
+    <div class="modal-overlay" id="editModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title"><i class="ph ph-pencil-simple"></i> 履歴編集</h3>
+                <button class="modal-close" onclick="hideEditModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="editItemId">
+                <div class="form-group mb-4">
+                    <label class="form-label">バーコード</label>
+                    <input type="text" class="form-input" id="editBarcode" readonly>
+                </div>
+                <div class="form-group mb-4">
+                    <label class="form-label">個数</label>
+                    <input type="number" class="form-input" id="editQuantity" min="1">
+                </div>
+                <div class="form-group mb-4">
+                    <label class="form-label">返却期限</label>
+                    <input type="date" class="form-input" id="editReturnDate">
+                </div>
+                <div class="form-group mb-4">
+                    <label class="form-label">ステータス</label>
+                    <div class="toggle-group">
+                        <label class="toggle-item">
+                            <input type="checkbox" class="toggle-checkbox" id="editReturned">
+                            <span>結果返却</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="form-group mb-4">
+                    <label class="form-label">ブロック個数（0=未返却）</label>
+                    <input type="number" class="form-input" id="editBlockQuantity" min="0" value="0">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">メモ</label>
+                    <input type="text" class="form-input" id="editNotes" placeholder="備考...">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-danger" onclick="deleteItem()">削除</button>
+                <button class="btn btn-secondary" onclick="hideEditModal()">キャンセル</button>
+                <button class="btn btn-primary" onclick="saveEdit()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- トースト -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script>
+        // 状態
+        let currentFilter = 'all';
+        let currentPage = 1;
+        let currentSearch = '';
+        let returnPage = 1;
+        let returnSearch = '';
+
+        // 個数の増減
+        function updateQuantity(change) {
+            const input = document.getElementById('quantityInput');
+            let val = parseInt(input.value) || 1;
+            val += change;
+            if (val < 1) val = 1;
+            input.value = val;
+        }
+
+        // バーコード入力にフォーカスを当てる
+        function focusBarcodeInput() {
+            const input = document.getElementById('barcodeInput');
+            if (input) {
+                input.focus();
+                input.select();
+            }
+        }
+
+        // 初期化
+        document.addEventListener('DOMContentLoaded', () => {
+            loadHistory();
+            loadReturnList();
+            updateIncompleteCount();
+
+            // ページ読み込み時にバーコード入力にフォーカス
+            setTimeout(focusBarcodeInput, 100);
+
+            // バーコード入力でEnter押したら登録
+            document.getElementById('barcodeInput').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    submitScan(e);
+                }
+            });
+
+            // 検索入力でEnter
+            document.getElementById('searchInput').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    loadHistory();
+                }
+            });
+
+            // 返却検索入力
+            let returnSearchTimeout;
+            document.getElementById('returnSearchInput').addEventListener('input', function(e) {
+                clearTimeout(returnSearchTimeout);
+                returnSearchTimeout = setTimeout(() => {
+                    returnSearch = this.value.trim();
+                    returnPage = 1;
+                    loadReturnList();
+                }, 300);
+            });
+
+            // ページ内どこかをクリックしてもスキャンタブなら自動でバーコード入力にフォーカス
+            document.addEventListener('click', function(e) {
+                // 入力フィールド、ボタン、モーダルなどをクリックした場合は無視
+                if (e.target.closest('input, button, select, textarea, .modal, .filter-tab, .main-tab, a')) {
+                    return;
+                }
+                // スキャンタブがアクティブならフォーカス
+                if (document.getElementById('tabScan').classList.contains('active')) {
+                    focusBarcodeInput();
+                }
+            });
+        });
+
+        // ============================================================
+        // メインタブ切り替え
+        // ============================================================
+
+        function switchMainTab(tab) {
+            // タブボタンの状態更新
+            document.querySelectorAll('.main-tab').forEach(t => {
+                t.classList.remove('active');
+                if (t.dataset.tab === tab) t.classList.add('active');
+            });
+
+            // タブコンテンツの表示切り替え
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            if (tab === 'scan') {
+                document.getElementById('tabScan').classList.add('active');
+                setTimeout(focusBarcodeInput, 50);
+            } else {
+                document.getElementById('tabReturn').classList.add('active');
+                loadReturnList();
+            }
+        }
+
+        // ============================================================
+        // スキャン登録
+        // ============================================================
+
+        function submitScan(e) {
+            e.preventDefault();
+
+            const barcode = document.getElementById('barcodeInput').value.trim();
+            const notes = document.getElementById('notesInput').value.trim();
+
+            if (!barcode && !notes) {
+                showToast('バーコードまたはメモを入力してください', 'error');
+                return;
+            }
+
+            const data = {
+                barcode: barcode,
+                quantity: parseInt(document.getElementById('quantityInput').value) || 1,
+                notes: notes
+            };
+
+            fetch('/scan', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    showToast('登録しました', 'success');
+                    document.getElementById('barcodeInput').value = '';
+                    document.getElementById('quantityInput').value = '1';
+                    document.getElementById('notesInput').value = '';
+                    focusBarcodeInput();
+                    loadHistory();
+                    updateIncompleteCount();
+                } else {
+                    showToast(result.error, 'error');
+                    focusBarcodeInput();
+                }
+            })
+            .catch(error => {
+                showToast('エラーが発生しました', 'error');
+            });
+        }
+
+        // ============================================================
+        // 返却処理
+        // ============================================================
+
+        function loadReturnList() {
+            const sort = document.getElementById('returnSortSelect').value;
+            const params = new URLSearchParams({
+                filter: 'incomplete',
+                page: returnPage,
+                per_page: 30,
+                sort: sort
+            });
+
+            if (returnSearch) {
+                params.set('search', returnSearch);
+            }
+
+            fetch(`/history?${params.toString()}`)
+                .then(response => response.json())
+                .then(data => {
+                    renderReturnTable(data.items);
+                    renderReturnPagination(data);
+                    document.getElementById('incompleteCount').textContent = data.total || 0;
+                })
+                .catch(error => {
+                    document.getElementById('returnTable').innerHTML = `
+                        <tr>
+                            <td colspan="6" class="text-center text-danger">
+                                データの読み込みに失敗しました
+                            </td>
+                        </tr>
+                    `;
+                });
+        }
+
+        function renderReturnTable(items) {
+            const tbody = document.getElementById('returnTable');
+
+            if (items.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="6">
+                            <div class="empty-state" style="padding: 40px 0;">
+                                <div class="empty-state-icon"><i class="ph ph-check-circle"></i></div>
+                                <div class="empty-state-title">未完了のデータがありません</div>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tbody.innerHTML = items.map(item => {
+                const isOverdue = item.is_overdue;
+                const scannedAt = new Date(item.scanned_at);
+                const expectedReturn = item.expected_return_date ? new Date(item.expected_return_date) : null;
+                const blockQty = item.block_quantity || 0;
+
+                return `
+                    <tr class="${isOverdue ? 'overdue' : ''}" data-id="${item.id}">
+                        <td class="return-id">#${item.id}</td>
+                        <td>
+                            <div class="return-info">
+                                <span class="return-barcode">${item.barcode ? escapeHtml(item.barcode) : '<span class="text-muted">バーコードなし</span>'}</span>
+                                ${item.notes ? `<span class="return-notes">${escapeHtml(item.notes)}</span>` : ''}
+                            </div>
+                        </td>
+                        <td>${formatDateShort(scannedAt)}</td>
+                        <td>
+                            ${expectedReturn ? formatDateShort(expectedReturn) : '-'}
+                            ${isOverdue ? '<span class="overdue-badge">超過</span>' : ''}
+                        </td>
+                        <td>
+                            <button class="return-toggle ${item.returned ? 'active' : ''}"
+                                    onclick="toggleReturn(${item.id}, 'returned', ${!item.returned})">
+                                <i class="ph ${item.returned ? 'ph-fill ph-check-circle' : 'ph ph-circle'}"></i>
+                                ${item.returned ? '済' : '未'}
+                            </button>
+                        </td>
+                        <td>
+                            <div class="block-quantity-input">
+                                <button type="button" class="block-stepper-btn" onclick="updateBlockQuantity(${item.id}, ${blockQty - 1})">
+                                    <i class="ph-bold ph-minus"></i>
+                                </button>
+                                <input type="number" class="block-qty-input ${blockQty > 0 ? 'has-value' : ''}"
+                                       value="${blockQty}" min="0"
+                                       onchange="updateBlockQuantity(${item.id}, this.value)">
+                                <button type="button" class="block-stepper-btn" onclick="updateBlockQuantity(${item.id}, ${blockQty + 1})">
+                                    <i class="ph-bold ph-plus"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function toggleReturn(itemId, field, value) {
+            const data = {};
+            data[field] = value;
+
+            fetch(`/update/${itemId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    // 両方完了したらメッセージ
+                    if (result.item.returned && result.item.block_returned) {
+                        showToast('完了しました！', 'success');
+                    }
+                    loadReturnList();
+                    loadHistory();
+                    updateIncompleteCount();
+                } else {
+                    showToast(result.error, 'error');
+                }
+            })
+            .catch(error => {
+                showToast('エラーが発生しました', 'error');
+            });
+        }
+
+        function updateBlockQuantity(itemId, quantity) {
+            quantity = parseInt(quantity) || 0;
+            if (quantity < 0) quantity = 0;
+
+            fetch(`/update/${itemId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify({ block_quantity: quantity })
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    // 両方完了したらメッセージ
+                    if (result.item.returned && result.item.block_returned) {
+                        showToast('完了しました！', 'success');
+                    }
+                    loadReturnList();
+                    loadHistory();
+                    updateIncompleteCount();
+                } else {
+                    showToast(result.error, 'error');
+                }
+            })
+            .catch(error => {
+                showToast('エラーが発生しました', 'error');
+            });
+        }
+
+        function renderReturnPagination(data) {
+            const container = document.getElementById('returnPagination');
+            if (data.pages <= 1) {
+                container.innerHTML = '';
+                return;
+            }
+
+            let html = '';
+            html += `<button class="page-btn" ${!data.has_prev ? 'disabled' : ''} onclick="goToReturnPage(${returnPage - 1})">‹</button>`;
+
+            for (let i = 1; i <= data.pages; i++) {
+                if (i === 1 || i === data.pages || (i >= returnPage - 2 && i <= returnPage + 2)) {
+                    html += `<button class="page-btn ${i === returnPage ? 'active' : ''}" onclick="goToReturnPage(${i})">${i}</button>`;
+                } else if (i === returnPage - 3 || i === returnPage + 3) {
+                    html += `<span style="padding: 8px;">...</span>`;
+                }
+            }
+
+            html += `<button class="page-btn" ${!data.has_next ? 'disabled' : ''} onclick="goToReturnPage(${returnPage + 1})">›</button>`;
+            container.innerHTML = html;
+        }
+
+        function goToReturnPage(page) {
+            returnPage = page;
+            loadReturnList();
+        }
+
+        function updateIncompleteCount() {
+            fetch('/history?filter=incomplete&per_page=1')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('incompleteCount').textContent = data.total || 0;
+                });
+        }
+
+        // ============================================================
+        // 履歴一覧
+        // ============================================================
+
+        function setFilter(filter) {
+            currentFilter = filter;
+            currentPage = 1;
+
+            document.querySelectorAll('.filter-tab').forEach(tab => {
+                tab.classList.remove('active');
+                if (tab.dataset.filter === filter) {
+                    tab.classList.add('active');
+                }
+            });
+
+            updateExportUrl();
+            loadHistory();
+        }
+
+        function updateExportUrl() {
+            const params = new URLSearchParams();
+            if (currentFilter !== 'all') params.set('filter', currentFilter);
+            if (currentSearch) params.set('search', currentSearch);
+
+            const exportBtn = document.getElementById('exportBtn');
+            exportBtn.href = '/export/csv' + (params.toString() ? '?' + params.toString() : '');
+        }
+
+        function loadHistory() {
+            currentSearch = document.getElementById('searchInput').value.trim();
+            updateExportUrl();
+
+            const params = new URLSearchParams({
+                filter: currentFilter,
+                page: currentPage,
+                per_page: 50
+            });
+
+            if (currentSearch) {
+                params.set('search', currentSearch);
+            }
+
+            fetch(`/history?${params.toString()}`)
+                .then(response => response.json())
+                .then(data => {
+                    renderHistory(data.items);
+                    renderPagination(data);
+                })
+                .catch(error => {
+                    document.getElementById('historyTable').innerHTML = `
+                        <tr>
+                            <td colspan="10" class="text-center text-danger">
+                                データの読み込みに失敗しました
+                            </td>
+                        </tr>
+                    `;
+                });
+        }
+
+        function renderHistory(items) {
+            const tbody = document.getElementById('historyTable');
+
+            if (items.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="10">
+                            <div class="empty-state">
+                                <div class="empty-state-icon"><i class="ph ph-package"></i></div>
+                                <div class="empty-state-title">データがありません</div>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tbody.innerHTML = items.map(item => {
+                const isOverdue = item.is_overdue;
+                const scannedAt = new Date(item.scanned_at);
+                const expectedReturn = item.expected_return_date ? new Date(item.expected_return_date) : null;
+
+                return `
+                    <tr class="${isOverdue ? 'overdue' : ''}">
+                        <td>${item.id}</td>
+                        <td><strong>${item.barcode ? escapeHtml(item.barcode) : '<span class="text-muted">-</span>'}</strong></td>
+                        <td>${item.quantity}</td>
+                        <td>${escapeHtml(item.scanned_by_name || '-')}</td>
+                        <td>${formatDate(scannedAt)}</td>
+                        <td>
+                            ${expectedReturn ? formatDate(expectedReturn, true) : '-'}
+                            ${isOverdue ? '<span class="status status-overdue">超過</span>' : ''}
+                        </td>
+                        <td>
+                            <span class="status ${item.returned ? 'status-returned' : 'status-pending'}">
+                                ${item.returned ? '済' : '未'}
+                            </span>
+                        </td>
+                        <td>
+                            <span class="status ${item.block_returned ? 'status-returned' : 'status-pending'}">
+                                ${item.block_quantity || 0}
+                            </span>
+                        </td>
+                        <td>${escapeHtml(item.notes || '-')}</td>
+                        <td>
+                            <div class="actions">
+                                <button class="btn btn-secondary btn-icon" onclick="showEditModal(${item.id})" title="編集">
+                                    <i class="ph ph-pencil-simple"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function renderPagination(data) {
+            const container = document.getElementById('pagination');
+
+            if (data.pages <= 1) {
+                container.innerHTML = '';
+                return;
+            }
+
+            let html = '';
+            html += `<button class="page-btn" ${!data.has_prev ? 'disabled' : ''} onclick="goToPage(${currentPage - 1})">‹</button>`;
+
+            for (let i = 1; i <= data.pages; i++) {
+                if (i === 1 || i === data.pages || (i >= currentPage - 2 && i <= currentPage + 2)) {
+                    html += `<button class="page-btn ${i === currentPage ? 'active' : ''}" onclick="goToPage(${i})">${i}</button>`;
+                } else if (i === currentPage - 3 || i === currentPage + 3) {
+                    html += `<span style="padding: 8px;">...</span>`;
+                }
+            }
+
+            html += `<button class="page-btn" ${!data.has_next ? 'disabled' : ''} onclick="goToPage(${currentPage + 1})">›</button>`;
+            container.innerHTML = html;
+        }
+
+        function goToPage(page) {
+            currentPage = page;
+            loadHistory();
+        }
+
+        // ============================================================
+        // 編集モーダル
+        // ============================================================
+
+        function showEditModal(itemId) {
+            fetch(`/history?filter=all&search=${itemId}`)
+                .then(response => response.json())
+                .then(data => {
+                    const item = data.items.find(i => i.id === itemId);
+                    if (!item) {
+                        showToast('データが見つかりません', 'error');
+                        return;
+                    }
+
+                    document.getElementById('editItemId').value = item.id;
+                    document.getElementById('editBarcode').value = item.barcode || '';
+                    document.getElementById('editQuantity').value = item.quantity;
+                    document.getElementById('editReturnDate').value = item.expected_return_date ? item.expected_return_date.split('T')[0] : '';
+                    document.getElementById('editReturned').checked = item.returned;
+                    document.getElementById('editBlockQuantity').value = item.block_quantity || 0;
+                    document.getElementById('editNotes').value = item.notes || '';
+
+                    document.getElementById('editModal').classList.add('active');
+                });
+        }
+
+        function hideEditModal() {
+            document.getElementById('editModal').classList.remove('active');
+        }
+
+        function saveEdit() {
+            const itemId = document.getElementById('editItemId').value;
+            const data = {
+                quantity: parseInt(document.getElementById('editQuantity').value),
+                expected_return_date: document.getElementById('editReturnDate').value || null,
+                returned: document.getElementById('editReturned').checked,
+                block_quantity: parseInt(document.getElementById('editBlockQuantity').value) || 0,
+                notes: document.getElementById('editNotes').value.trim()
+            };
+
+            fetch(`/update/${itemId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    showToast('更新しました', 'success');
+                    hideEditModal();
+                    loadHistory();
+                    loadReturnList();
+                } else {
+                    showToast(result.error, 'error');
+                }
+            })
+            .catch(error => {
+                showToast('エラーが発生しました', 'error');
+            });
+        }
+
+        function deleteItem() {
+            if (!confirm('この履歴を削除しますか？')) return;
+
+            const itemId = document.getElementById('editItemId').value;
+
+            fetch(`/delete/${itemId}`, {
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    showToast('削除しました', 'success');
+                    hideEditModal();
+                    loadHistory();
+                    loadReturnList();
+                } else {
+                    showToast(result.error, 'error');
+                }
+            })
+            .catch(error => {
+                showToast('エラーが発生しました', 'error');
+            });
+        }
+
+        // ============================================================
+        // バックアップ
+        // ============================================================
+
+        function runBackup() {
+            showToast('バックアップを開始しています...', 'info');
+
+            fetch('/backup/run', {
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    showToast('バックアップが完了しました', 'success');
+                    document.getElementById('lastBackup').textContent = new Date().toLocaleString('ja-JP');
+                } else {
+                    showToast(result.message, 'error');
+                }
+            })
+            .catch(error => {
+                showToast('バックアップに失敗しました', 'error');
+            });
+        }
+
+        // ============================================================
+        // ユーティリティ
+        // ============================================================
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function formatDate(date, dateOnly = false) {
+            if (dateOnly) {
+                return date.toLocaleDateString('ja-JP');
+            }
+            return date.toLocaleString('ja-JP', {
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        function formatDateShort(date) {
+            return date.toLocaleDateString('ja-JP', {
+                month: '2-digit',
+                day: '2-digit'
+            });
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            const iconClass = type === 'success' ? 'ph-check' : type === 'error' ? 'ph-x' : 'ph-info';
+            toast.innerHTML = `
+                <i class="ph ${iconClass}"></i>
+                <span>${escapeHtml(message)}</span>
+            `;
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        // モーダル外クリックで閉じる
+        document.getElementById('editModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                hideEditModal();
+            }
+        });
+    </script>
+</body>
+</html>

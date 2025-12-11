@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>設定 - Patho Record</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <!-- Phosphor Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.2/src/regular/style.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.2/src/bold/style.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.2/src/fill/style.css" />
+</head>
+<body>
+    <!-- ヘッダー -->
+    <header class="header">
+        <div class="header-left">
+            <a href="{{ url_for('main') }}" class="logo" style="text-decoration: none;">
+                <i class="ph ph-arrow-left"></i> <i class="ph-bold ph-flask"></i> Patho Record
+            </a>
+        </div>
+        <div class="header-right">
+            <span class="user-badge">{{ user.name }}</span>
+        </div>
+    </header>
+
+    <main class="main-container">
+        <!-- ユーザー管理 -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title"><i class="ph ph-users"></i> ユーザー管理</h2>
+            </div>
+            <div class="card-body">
+                <div style="margin-bottom: 16px;">
+                    <button class="btn btn-primary" onclick="showAddUserModal()">
+                        <i class="ph ph-user-plus"></i> 新規ユーザー追加
+                    </button>
+                </div>
+
+                <div class="table-container">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>名前</th>
+                                <th>種別</th>
+                                <th>パスワード</th>
+                                <th>登録日</th>
+                                <th>状態</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersTable">
+                            {% for u in users %}
+                            <tr data-user-id="{{ u.id }}">
+                                <td>{{ u.id }}</td>
+                                <td>
+                                    <i class="ph-fill {{ 'ph-user-circle-gear' if u.is_admin else 'ph-user-circle' }}"></i>
+                                    {{ u.name }}
+                                </td>
+                                <td>
+                                    <span class="badge {{ 'badge-warning' if u.is_admin else 'badge-info' }}">
+                                        {{ '管理者' if u.is_admin else '一般' }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <span class="badge {{ 'badge-success' if u.has_password else 'badge-secondary' }}">
+                                        {% if u.has_password %}<i class="ph-fill ph-lock-simple"></i> 設定済{% else %}未設定{% endif %}
+                                    </span>
+                                </td>
+                                <td>{{ u.created_at.strftime('%Y-%m-%d') if u.created_at else '-' }}</td>
+                                <td>
+                                    <span class="status {{ 'status-returned' if u.is_active else 'status-pending' }}">
+                                        {{ '有効' if u.is_active else '無効' }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <div class="actions">
+                                        <button class="btn btn-secondary btn-sm" onclick="editUser({{ u.id }}, '{{ u.name }}', {{ 'true' if u.is_active else 'false' }}, {{ 'true' if u.is_admin else 'false' }}, {{ 'true' if u.has_password else 'false' }})">
+                                            編集
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- バックアップ情報 -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title"><i class="ph ph-floppy-disk"></i> バックアップ</h2>
+            </div>
+            <div class="card-body">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px;">
+                    <div>
+                        <p class="form-label">USB接続状態</p>
+                        <p>
+                            <span class="badge {{ 'badge-success' if usb_status.connected else 'badge-danger' }}">
+                                {{ '接続中' if usb_status.connected else '未接続' }}
+                            </span>
+                            {% if usb_status.connected %}
+                            <br><small class="text-muted">{{ usb_status.mount_point }}</small>
+                            {% endif %}
+                        </p>
+                    </div>
+                    <div>
+                        <p class="form-label">バックアップ時刻</p>
+                        <p>毎日 {{ config.BACKUP_TIME }}</p>
+                    </div>
+                    <div>
+                        <p class="form-label">保持期間</p>
+                        <p>{{ config.BACKUP_RETENTION_DAYS }}日間</p>
+                    </div>
+                    <div>
+                        <p class="form-label">デフォルト返却期限</p>
+                        <p>{{ config.DEFAULT_RETURN_DAYS }}日間</p>
+                    </div>
+                </div>
+
+                <div class="mt-4">
+                    <button class="btn btn-primary" onclick="runBackup()">
+                        今すぐバックアップ実行
+                    </button>
+                </div>
+
+                <div class="mt-4">
+                    <h4 style="margin-bottom: 12px;">最近のバックアップ</h4>
+                    <div id="backupList">
+                        <div class="loading">
+                            <div class="spinner"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 監査ログ -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title"><i class="ph ph-list-checks"></i> 監査ログ（最新50件）</h2>
+            </div>
+            <div class="card-body">
+                <div class="table-container">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>日時</th>
+                                <th>操作</th>
+                                <th>テーブル</th>
+                                <th>レコードID</th>
+                                <th>ユーザー</th>
+                            </tr>
+                        </thead>
+                        <tbody id="auditLogTable">
+                            <tr>
+                                <td colspan="5" class="text-center">
+                                    <div class="loading">
+                                        <div class="spinner"></div>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- ユーザー追加モーダル -->
+    <div class="modal-overlay" id="addUserModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title"><i class="ph ph-user-plus"></i> 新規ユーザー追加</h3>
+                <button class="modal-close" onclick="hideAddUserModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group mb-4">
+                    <label class="form-label">ユーザー名</label>
+                    <input type="text" class="form-input" id="newUserName" placeholder="名前を入力...">
+                </div>
+                <div class="form-group mb-4">
+                    <label class="form-label">パスワード（任意）</label>
+                    <input type="password" class="form-input" id="newUserPassword" placeholder="パスワードを設定...">
+                    <small class="text-muted">空欄の場合、パスワードなしでログイン可能</small>
+                </div>
+                <div class="form-group">
+                    <label class="toggle-item">
+                        <input type="checkbox" class="toggle-checkbox" id="newUserAdmin">
+                        <span>管理者権限</span>
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="hideAddUserModal()">キャンセル</button>
+                <button class="btn btn-primary" onclick="addUser()">追加</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ユーザー編集モーダル -->
+    <div class="modal-overlay" id="editUserModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title"><i class="ph ph-user-gear"></i> ユーザー編集</h3>
+                <button class="modal-close" onclick="hideEditUserModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="editUserId">
+                <div class="form-group mb-4">
+                    <label class="form-label">ユーザー名</label>
+                    <input type="text" class="form-input" id="editUserName" placeholder="名前を入力...">
+                </div>
+                <div class="form-group mb-4">
+                    <label class="form-label">新しいパスワード</label>
+                    <input type="password" class="form-input" id="editUserPassword" placeholder="変更する場合のみ入力...">
+                    <small class="text-muted" id="editPasswordHint">現在のパスワード: 設定済み</small>
+                </div>
+                <div class="form-group mb-4">
+                    <label class="toggle-item">
+                        <input type="checkbox" class="toggle-checkbox" id="editClearPassword">
+                        <span>パスワードを削除する</span>
+                    </label>
+                </div>
+                <div class="form-group mb-4">
+                    <label class="toggle-item">
+                        <input type="checkbox" class="toggle-checkbox" id="editUserAdmin">
+                        <span>管理者権限</span>
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label class="toggle-item">
+                        <input type="checkbox" class="toggle-checkbox" id="editUserActive">
+                        <span>有効</span>
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="hideEditUserModal()">キャンセル</button>
+                <button class="btn btn-primary" onclick="saveUser()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- トースト -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script>
+        // 初期化
+        document.addEventListener('DOMContentLoaded', () => {
+            loadBackupList();
+            loadAuditLogs();
+        });
+
+        // ユーザー追加モーダル
+        function showAddUserModal() {
+            document.getElementById('addUserModal').classList.add('active');
+            document.getElementById('newUserName').focus();
+        }
+
+        function hideAddUserModal() {
+            document.getElementById('addUserModal').classList.remove('active');
+            document.getElementById('newUserName').value = '';
+            document.getElementById('newUserPassword').value = '';
+            document.getElementById('newUserAdmin').checked = false;
+        }
+
+        function addUser() {
+            const name = document.getElementById('newUserName').value.trim();
+            const password = document.getElementById('newUserPassword').value;
+            const isAdmin = document.getElementById('newUserAdmin').checked;
+
+            if (!name) {
+                showToast('名前を入力してください', 'error');
+                return;
+            }
+
+            fetch('/users', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify({ name: name, password: password, is_admin: isAdmin })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showToast('ユーザーを追加しました', 'success');
+                    hideAddUserModal();
+                    location.reload();
+                } else {
+                    showToast(data.error, 'error');
+                }
+            })
+            .catch(error => {
+                showToast('エラーが発生しました', 'error');
+            });
+        }
+
+        // ユーザー編集
+        function editUser(id, name, isActive, isAdmin, hasPassword) {
+            document.getElementById('editUserId').value = id;
+            document.getElementById('editUserName').value = name;
+            document.getElementById('editUserPassword').value = '';
+            document.getElementById('editUserActive').checked = isActive;
+            document.getElementById('editUserAdmin').checked = isAdmin;
+            document.getElementById('editClearPassword').checked = false;
+            document.getElementById('editPasswordHint').innerHTML =
+                hasPassword ? '現在のパスワード: <i class="ph-fill ph-lock-simple"></i> 設定済み' : '現在のパスワード: 未設定';
+            document.getElementById('editUserModal').classList.add('active');
+        }
+
+        function hideEditUserModal() {
+            document.getElementById('editUserModal').classList.remove('active');
+        }
+
+        function saveUser() {
+            const userId = document.getElementById('editUserId').value;
+            const password = document.getElementById('editUserPassword').value;
+            const clearPassword = document.getElementById('editClearPassword').checked;
+
+            const data = {
+                name: document.getElementById('editUserName').value.trim(),
+                is_active: document.getElementById('editUserActive').checked,
+                is_admin: document.getElementById('editUserAdmin').checked
+            };
+
+            // パスワード処理
+            if (clearPassword) {
+                data.password = '';
+                data.clear_password = true;
+            } else if (password) {
+                data.password = password;
+            }
+
+            fetch(`/users/${userId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    showToast('更新しました', 'success');
+                    hideEditUserModal();
+                    location.reload();
+                } else {
+                    showToast(result.error, 'error');
+                }
+            })
+            .catch(error => {
+                showToast('エラーが発生しました', 'error');
+            });
+        }
+
+        // バックアップ
+        function loadBackupList() {
+            fetch('/backup/status')
+                .then(response => response.json())
+                .then(data => {
+                    const container = document.getElementById('backupList');
+
+                    if (!data.backups || data.backups.length === 0) {
+                        container.innerHTML = '<p class="text-muted">バックアップがありません</p>';
+                        return;
+                    }
+
+                    container.innerHTML = `
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>ファイル名</th>
+                                    <th>場所</th>
+                                    <th>日時</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${data.backups.map(b => `
+                                    <tr>
+                                        <td>${b.filename}</td>
+                                        <td>
+                                            <span class="badge ${b.location === 'usb' ? 'badge-success' : 'badge-info'}">
+                                                ${b.location === 'usb' ? 'USB' : 'ローカル'}
+                                            </span>
+                                        </td>
+                                        <td>${new Date(b.modified).toLocaleString('ja-JP')}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    `;
+                })
+                .catch(error => {
+                    document.getElementById('backupList').innerHTML = '<p class="text-danger">読み込みに失敗しました</p>';
+                });
+        }
+
+        function runBackup() {
+            showToast('バックアップを開始しています...', 'info');
+
+            fetch('/backup/run', {
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    showToast('バックアップが完了しました', 'success');
+                    loadBackupList();
+                } else {
+                    showToast(result.message, 'error');
+                }
+            })
+            .catch(error => {
+                showToast('バックアップに失敗しました', 'error');
+            });
+        }
+
+        // 監査ログ
+        function loadAuditLogs() {
+            fetch('/audit-logs?per_page=50')
+                .then(response => response.json())
+                .then(data => {
+                    const tbody = document.getElementById('auditLogTable');
+
+                    if (!data.logs || data.logs.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">ログがありません</td></tr>';
+                        return;
+                    }
+
+                    tbody.innerHTML = data.logs.map(log => `
+                        <tr>
+                            <td>${new Date(log.timestamp).toLocaleString('ja-JP')}</td>
+                            <td>
+                                <span class="badge ${log.action === 'CREATE' ? 'badge-success' : log.action === 'DELETE' ? 'badge-danger' : 'badge-warning'}">
+                                    ${log.action}
+                                </span>
+                            </td>
+                            <td>${log.table_name}</td>
+                            <td>${log.record_id}</td>
+                            <td>${log.user_name || '-'}</td>
+                        </tr>
+                    `).join('');
+                })
+                .catch(error => {
+                    document.getElementById('auditLogTable').innerHTML = '<tr><td colspan="5" class="text-center text-danger">読み込みに失敗しました</td></tr>';
+                });
+        }
+
+        // トースト
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            const iconClass = type === 'success' ? 'ph-check' : type === 'error' ? 'ph-x' : 'ph-info';
+            toast.innerHTML = `
+                <i class="ph ${iconClass}"></i>
+                <span>${message}</span>
+            `;
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        // Enterキーで追加
+        document.getElementById('newUserName').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') addUser();
+        });
+
+        // モーダル外クリックで閉じる
+        document.getElementById('addUserModal').addEventListener('click', function(e) {
+            if (e.target === this) hideAddUserModal();
+        });
+        document.getElementById('editUserModal').addEventListener('click', function(e) {
+            if (e.target === this) hideEditUserModal();
+        });
+    </script>
+</body>
+</html>
