@@ -62,8 +62,14 @@ class ItemLog(db.Model):
     scanned_by_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
     scanned_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     expected_return_date = db.Column(db.DateTime, nullable=True, index=True)
-    returned = db.Column(db.Boolean, default=False, index=True)
-    block_quantity = db.Column(db.Integer, default=0)  # ブロック返却個数（0=未返却）
+    returned = db.Column(db.Boolean, default=False, index=True)  # 結果返却済み
+    returned_at = db.Column(db.DateTime, nullable=True)  # 結果返却日時
+    block_quantity = db.Column(db.Integer, default=0)  # ブロック返却個数
+    block_returned_at = db.Column(db.DateTime, nullable=True)  # ブロック返却日時
+    slide_quantity = db.Column(db.Integer, default=0)  # スライド返却個数
+    slide_returned_at = db.Column(db.DateTime, nullable=True)  # スライド返却日時
+    completed = db.Column(db.Boolean, default=False, index=True)  # 完了フラグ（完了ボタン押下）
+    completed_at = db.Column(db.DateTime, nullable=True)  # 完了日時
     notes = db.Column(db.Text, nullable=True)
     deleted_at = db.Column(db.DateTime, nullable=True, index=True)
 
@@ -72,10 +78,21 @@ class ItemLog(db.Model):
         """ブロック返却済みかどうか（個数 > 0 なら返却済み）"""
         return self.block_quantity > 0
 
+    @property
+    def slide_returned(self):
+        """スライド返却済みかどうか（個数 > 0 なら返却済み）"""
+        return self.slide_quantity > 0
+
+    @property
+    def all_returned(self):
+        """全て返却済みかどうか（完了ボタン押下で完了）"""
+        return self.completed
+
     # 複合インデックス
     __table_args__ = (
         db.Index('ix_barcode_scannedat', 'barcode', 'scanned_at'),
         db.Index('ix_returned_deleted', 'returned', 'deleted_at'),
+        db.Index('ix_completed_deleted', 'completed', 'deleted_at'),
     )
 
     @property
@@ -105,8 +122,16 @@ class ItemLog(db.Model):
             'scanned_at': self.scanned_at.isoformat() if self.scanned_at else None,
             'expected_return_date': self.expected_return_date.isoformat() if self.expected_return_date else None,
             'returned': self.returned,
+            'returned_at': self.returned_at.isoformat() if self.returned_at else None,
             'block_quantity': self.block_quantity,
-            'block_returned': self.block_returned,  # computed property
+            'block_returned': self.block_returned,
+            'block_returned_at': self.block_returned_at.isoformat() if self.block_returned_at else None,
+            'slide_quantity': self.slide_quantity,
+            'slide_returned': self.slide_returned,
+            'slide_returned_at': self.slide_returned_at.isoformat() if self.slide_returned_at else None,
+            'completed': self.completed,
+            'completed_at': self.completed_at.isoformat() if self.completed_at else None,
+            'all_returned': self.all_returned,
             'notes': self.notes,
             'deleted_at': self.deleted_at.isoformat() if self.deleted_at else None,
             'is_overdue': self.is_overdue,

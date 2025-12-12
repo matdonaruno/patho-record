@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>設定 - Patho Record</title>
+    <title>設定 - Patho Return</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <!-- Phosphor Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.2/src/regular/style.css" />
@@ -15,7 +15,7 @@
     <header class="header">
         <div class="header-left">
             <a href="{{ url_for('main') }}" class="logo" style="text-decoration: none;">
-                <i class="ph ph-arrow-left"></i> <i class="ph-bold ph-flask"></i> Patho Record
+                <i class="ph ph-arrow-left"></i> <i class="ph-bold ph-cube"></i> Patho Return
             </a>
         </div>
         <div class="header-right">
@@ -107,8 +107,8 @@
                         </p>
                     </div>
                     <div>
-                        <p class="form-label">バックアップ時刻</p>
-                        <p>毎日 {{ config.BACKUP_TIME }}</p>
+                        <p class="form-label">バックアップタイミング</p>
+                        <p>その日の初回起動時</p>
                     </div>
                     <div>
                         <p class="form-label">保持期間</p>
@@ -116,7 +116,41 @@
                     </div>
                     <div>
                         <p class="form-label">デフォルト返却期限</p>
-                        <p>{{ config.DEFAULT_RETURN_DAYS }}日間</p>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <input type="number" class="form-input" id="returnDaysInput"
+                                   value="{{ return_days }}" min="1" max="365"
+                                   style="width: 80px; text-align: center;">
+                            <span>日間</span>
+                            <button class="btn btn-secondary btn-sm" onclick="saveReturnDays()">保存</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- USBデバイスID設定 -->
+                <div class="mt-4" style="border-top: 1px solid var(--border-color); padding-top: 16px;">
+                    <h4 style="margin-bottom: 12px;"><i class="ph ph-usb"></i> USBデバイスID設定</h4>
+                    <p class="text-muted" style="font-size: 0.85rem; margin-bottom: 12px;">
+                        バックアップ先USBのシリアル番号を設定すると、そのUSBが接続されている時のみバックアップが実行されます。
+                    </p>
+
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px;">
+                        <input type="text" class="form-input" id="usbDeviceIdInput"
+                               placeholder="USBデバイスID（シリアル番号）"
+                               style="flex: 1; max-width: 400px;">
+                        <button class="btn btn-secondary btn-sm" onclick="saveUsbDeviceId()">保存</button>
+                        <button class="btn btn-secondary btn-sm" onclick="clearUsbDeviceId()">クリア</button>
+                    </div>
+
+                    <div style="background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 12px;">
+                        <p class="form-label" style="margin-bottom: 8px;">
+                            <i class="ph ph-list"></i> 接続中のUSBデバイス
+                            <button class="btn btn-secondary btn-sm" onclick="loadUsbDevices()" style="margin-left: 8px;">
+                                <i class="ph ph-arrow-clockwise"></i> 更新
+                            </button>
+                        </p>
+                        <div id="usbDeviceList">
+                            <span class="text-muted">読み込み中...</span>
+                        </div>
                     </div>
                 </div>
 
@@ -252,7 +286,84 @@
         document.addEventListener('DOMContentLoaded', () => {
             loadBackupList();
             loadAuditLogs();
+            loadUsbDeviceId();
+            loadUsbDevices();
         });
+
+        // USBデバイスID関連
+        function loadUsbDeviceId() {
+            fetch('/settings/usb-device-id')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('usbDeviceIdInput').value = data.usb_device_id || '';
+                })
+                .catch(error => {
+                    console.error('USBデバイスID読み込みエラー:', error);
+                });
+        }
+
+        function saveUsbDeviceId() {
+            const deviceId = document.getElementById('usbDeviceIdInput').value.trim();
+
+            fetch('/settings/usb-device-id', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify({ device_id: deviceId })
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    showToast('USBデバイスIDを保存しました', 'success');
+                } else {
+                    showToast(result.error, 'error');
+                }
+            })
+            .catch(error => {
+                showToast('エラーが発生しました', 'error');
+            });
+        }
+
+        function clearUsbDeviceId() {
+            document.getElementById('usbDeviceIdInput').value = '';
+            saveUsbDeviceId();
+        }
+
+        function loadUsbDevices() {
+            const container = document.getElementById('usbDeviceList');
+            container.innerHTML = '<span class="text-muted">読み込み中...</span>';
+
+            fetch('/settings/usb-devices')
+                .then(response => response.json())
+                .then(data => {
+                    if (!data.devices || data.devices.length === 0) {
+                        container.innerHTML = '<span class="text-muted">USBデバイスが見つかりません</span>';
+                        return;
+                    }
+
+                    container.innerHTML = data.devices.map(device => `
+                        <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px; background: var(--bg-color); border-radius: 4px; margin-bottom: 6px;">
+                            <div>
+                                <strong>${device.name || 'USBデバイス'}</strong>
+                                <br><small class="text-muted">Serial: ${device.serial}</small>
+                            </div>
+                            <button class="btn btn-primary btn-sm" onclick="copyToUsbInput('${device.serial}')">
+                                <i class="ph ph-copy"></i> 使用
+                            </button>
+                        </div>
+                    `).join('');
+                })
+                .catch(error => {
+                    container.innerHTML = '<span class="text-danger">読み込みに失敗しました</span>';
+                });
+        }
+
+        function copyToUsbInput(serial) {
+            document.getElementById('usbDeviceIdInput').value = serial;
+            showToast('シリアル番号をコピーしました。保存ボタンを押してください。', 'info');
+        }
 
         // ユーザー追加モーダル
         function showAddUserModal() {
@@ -350,6 +461,36 @@
                     showToast('更新しました', 'success');
                     hideEditUserModal();
                     location.reload();
+                } else {
+                    showToast(result.error, 'error');
+                }
+            })
+            .catch(error => {
+                showToast('エラーが発生しました', 'error');
+            });
+        }
+
+        // 返却期限日数の保存
+        function saveReturnDays() {
+            const days = parseInt(document.getElementById('returnDaysInput').value);
+
+            if (isNaN(days) || days < 1 || days > 365) {
+                showToast('1〜365の範囲で入力してください', 'error');
+                return;
+            }
+
+            fetch('/settings/return-days', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify({ days: days })
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    showToast(`返却期限を${result.return_days}日に設定しました`, 'success');
                 } else {
                     showToast(result.error, 'error');
                 }

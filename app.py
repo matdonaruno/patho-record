@@ -12,7 +12,6 @@ from flask import (
     Flask, render_template, request, jsonify, session,
     redirect, url_for, flash, Response
 )
-from apscheduler.schedulers.background import BackgroundScheduler
 
 from config import Config
 from models import db, User, ItemLog, AuditLog, AppSettings
@@ -33,9 +32,6 @@ audit_logger = get_audit_logger()
 
 # バックアップマネージャー
 backup_manager = BackupManager()
-
-# スケジューラー
-scheduler = BackgroundScheduler()
 
 
 # ============================================================
@@ -198,14 +194,14 @@ def main():
 
     # 期限超過件数
     overdue_count = ItemLog.query.filter(
-        ItemLog.returned == False,
+        ItemLog.completed == False,
         ItemLog.deleted_at == None,
         ItemLog.expected_return_date < datetime.utcnow()
     ).count()
 
-    # 未返却件数
+    # 未完了件数
     unreturned_count = ItemLog.query.filter(
-        ItemLog.returned == False,
+        ItemLog.completed == False,
         ItemLog.deleted_at == None
     ).count()
 
@@ -236,6 +232,7 @@ def scan():
     notes = data.get('notes', '').strip() or None
     returned = data.get('returned', False)
     block_quantity = int(data.get('block_quantity', 0))
+    slide_quantity = int(data.get('slide_quantity', 0))
 
     # バーコードまたはメモのいずれかが必要
     if not barcode and not notes:
@@ -245,7 +242,8 @@ def scan():
         return jsonify({'error': '個数は1以上を指定してください'}), 400
 
     # 期待返却日を計算（設定値を使用）
-    return_days = Config.DEFAULT_RETURN_DAYS
+    return_days_setting = AppSettings.get('return_days', str(Config.DEFAULT_RETURN_DAYS))
+    return_days = int(return_days_setting)
     expected_return_date = datetime.utcnow() + timedelta(days=return_days)
 
     # 新規レコード作成
@@ -256,6 +254,7 @@ def scan():
         expected_return_date=expected_return_date,
         returned=returned,
         block_quantity=block_quantity,
+        slide_quantity=slide_quantity,
         notes=notes
     )
 
@@ -293,23 +292,39 @@ def history():
 
     # フィルタ適用
     if filter_type == 'unreturned':
-        query = query.filter(ItemLog.returned == False)
+        query = query.filter(ItemLog.completed == False)
     elif filter_type == 'overdue':
         query = query.filter(
-            ItemLog.returned == False,
+            ItemLog.completed == False,
             ItemLog.expected_return_date < datetime.utcnow()
         )
     elif filter_type == 'today':
         today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
         query = query.filter(ItemLog.scanned_at >= today_start)
-    elif filter_type == 'incomplete':
-        # 結果返却またはブロック返却が未完了のもの
+    elif filter_type == 'yesterday':
+        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        yesterday_start = today_start - timedelta(days=1)
         query = query.filter(
-            db.or_(
-                ItemLog.returned == False,
-                ItemLog.block_quantity == 0
-            )
+            ItemLog.scanned_at >= yesterday_start,
+            ItemLog.scanned_at < today_start
         )
+    elif filter_type == 'today_incomplete':
+        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        query = query.filter(
+            ItemLog.scanned_at >= today_start,
+            ItemLog.completed == False
+        )
+    elif filter_type == 'yesterday_incomplete':
+        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        yesterday_start = today_start - timedelta(days=1)
+        query = query.filter(
+            ItemLog.scanned_at >= yesterday_start,
+            ItemLog.scanned_at < today_start,
+            ItemLog.completed == False
+        )
+    elif filter_type == 'incomplete':
+        # 未完了のもの（完了ボタンが押されていないもの）
+        query = query.filter(ItemLog.completed == False)
 
     # 検索
     if search:
@@ -326,6 +341,8 @@ def history():
     elif sort == 'overdue':
         # 期限超過を優先（期限が古い順）
         query = query.order_by(ItemLog.expected_return_date.asc().nullslast())
+    elif sort == 'barcode':
+        query = query.order_by(ItemLog.barcode.asc(), ItemLog.scanned_at.desc())
     else:  # newest (default)
         query = query.order_by(ItemLog.scanned_at.desc())
 
@@ -346,6 +363,14 @@ def history():
 # ルート: 更新 / 削除
 # ============================================================
 
+@app.route('/item/<int:item_id>', methods=['GET'])
+@login_required
+def get_item(item_id):
+    """単一アイテム取得"""
+    item = ItemLog.query.get_or_404(item_id)
+    return jsonify({'success': True, 'item': item.to_dict()})
+
+
 @app.route('/update/<int:item_id>', methods=['POST'])
 @login_required
 def update_item(item_id):
@@ -355,14 +380,35 @@ def update_item(item_id):
 
     # 変更前の値を保存
     old_value = item.to_dict()
+    now = datetime.utcnow()
 
     # 更新可能なフィールド
     if 'quantity' in data:
         item.quantity = int(data['quantity'])
     if 'returned' in data:
-        item.returned = bool(data['returned'])
+        new_returned = bool(data['returned'])
+        # 結果返却が初めてチェックされた時にタイムスタンプを記録
+        if new_returned and not item.returned:
+            item.returned_at = now
+        elif not new_returned:
+            item.returned_at = None
+        item.returned = new_returned
     if 'block_quantity' in data:
-        item.block_quantity = int(data['block_quantity'])
+        new_block_quantity = int(data['block_quantity'])
+        # ブロック返却が初めて入力された時にタイムスタンプを記録
+        if new_block_quantity > 0 and item.block_quantity == 0:
+            item.block_returned_at = now
+        elif new_block_quantity == 0:
+            item.block_returned_at = None
+        item.block_quantity = new_block_quantity
+    if 'slide_quantity' in data:
+        new_slide_quantity = int(data['slide_quantity'])
+        # スライド返却が初めて入力された時にタイムスタンプを記録
+        if new_slide_quantity > 0 and item.slide_quantity == 0:
+            item.slide_returned_at = now
+        elif new_slide_quantity == 0:
+            item.slide_returned_at = None
+        item.slide_quantity = new_slide_quantity
     if 'notes' in data:
         item.notes = data['notes'].strip() or None
     if 'expected_return_date' in data:
@@ -370,6 +416,14 @@ def update_item(item_id):
             item.expected_return_date = datetime.fromisoformat(data['expected_return_date'])
         else:
             item.expected_return_date = None
+    # 完了フラグの処理
+    if 'completed' in data:
+        new_completed = bool(data['completed'])
+        if new_completed and not item.completed:
+            item.completed_at = now
+        elif not new_completed:
+            item.completed_at = None
+        item.completed = new_completed
 
     db.session.commit()
 
@@ -515,10 +569,10 @@ def export_csv():
     query = ItemLog.query.filter(ItemLog.deleted_at == None)
 
     if filter_type == 'unreturned':
-        query = query.filter(ItemLog.returned == False)
+        query = query.filter(ItemLog.completed == False)
     elif filter_type == 'overdue':
         query = query.filter(
-            ItemLog.returned == False,
+            ItemLog.completed == False,
             ItemLog.expected_return_date < datetime.utcnow()
         )
 
@@ -539,7 +593,7 @@ def export_csv():
     # ヘッダー
     writer.writerow([
         'ID', 'バーコード', '個数', 'スキャン者', 'スキャン日時',
-        '期待返却日', '結果返却', 'ブロック返却', 'メモ'
+        'ブロック個数', 'スライド個数', 'メモ'
     ])
 
     # データ
@@ -550,9 +604,8 @@ def export_csv():
             item.quantity,
             item.scanned_by.name if item.scanned_by else '',
             item.scanned_at.strftime('%Y-%m-%d %H:%M:%S') if item.scanned_at else '',
-            item.expected_return_date.strftime('%Y-%m-%d') if item.expected_return_date else '',
-            '済' if item.returned else '未',
-            '済' if item.block_returned else '未',
+            item.block_quantity or '',
+            item.slide_quantity or '',
             item.notes or ''
         ])
 
@@ -637,13 +690,76 @@ def settings():
     usb_status = USBChecker().get_status()
     users = User.query.order_by(User.name).all()
 
+    # 返却期限日数を取得（デフォルトはConfig値）
+    return_days = AppSettings.get('return_days', str(Config.DEFAULT_RETURN_DAYS))
+
     return render_template(
         'settings.html',
         user=user,
         usb_status=usb_status,
         users=users,
-        config=Config
+        config=Config,
+        return_days=int(return_days)
     )
+
+
+@app.route('/settings/return-days', methods=['GET', 'POST'])
+@login_required
+def settings_return_days():
+    """返却期限日数の取得・更新"""
+    if request.method == 'GET':
+        return_days = AppSettings.get('return_days', str(Config.DEFAULT_RETURN_DAYS))
+        return jsonify({'return_days': int(return_days)})
+
+    data = request.json
+    days = data.get('days')
+
+    if days is None or not isinstance(days, int) or days < 1:
+        return jsonify({'error': '有効な日数を指定してください'}), 400
+
+    AppSettings.set('return_days', str(days))
+
+    user = get_current_user()
+    logger.info(f"返却期限日数を変更: {days}日 (ユーザー: {user.name})")
+
+    return jsonify({
+        'success': True,
+        'return_days': days
+    })
+
+
+@app.route('/settings/usb-device-id', methods=['GET', 'POST'])
+@login_required
+def settings_usb_device_id():
+    """USBデバイスID設定の取得・更新"""
+    if request.method == 'GET':
+        usb_device_id = AppSettings.get('usb_device_id', '')
+        return jsonify({'usb_device_id': usb_device_id})
+
+    data = request.json
+    device_id = data.get('device_id', '').strip()
+
+    AppSettings.set('usb_device_id', device_id)
+
+    user = get_current_user()
+    logger.info(f"USBデバイスIDを変更: {device_id or '(未設定)'} (ユーザー: {user.name})")
+
+    return jsonify({
+        'success': True,
+        'usb_device_id': device_id
+    })
+
+
+@app.route('/settings/usb-devices')
+@login_required
+def get_usb_devices():
+    """接続中のUSBデバイス一覧を取得"""
+    checker = USBChecker()
+    devices = checker.get_connected_usb_devices()
+
+    return jsonify({
+        'devices': devices
+    })
 
 
 # ============================================================
@@ -664,34 +780,33 @@ def init_db():
             logger.info("デフォルト管理者ユーザーを作成しました（初期パスワード: admin）")
 
 
-def scheduled_backup():
-    """スケジュールバックアップ"""
-    with app.app_context():
-        logger.info("スケジュールバックアップ開始")
-        success, message, path = backup_manager.create_backup()
-        if success:
-            logger.info(f"スケジュールバックアップ完了: {path}")
-        else:
-            logger.error(f"スケジュールバックアップ失敗: {message}")
+def check_and_run_daily_backup():
+    """その日の初回起動時バックアップを確認・実行"""
+    today = datetime.utcnow().strftime('%Y-%m-%d')
+    last_backup_date = AppSettings.get('last_backup_date', '')
 
+    if last_backup_date == today:
+        logger.info(f"本日のバックアップは実行済み: {today}")
+        return True, "本日のバックアップは実行済み"
 
-def start_scheduler():
-    """スケジューラー開始"""
-    # バックアップ時刻をパース
-    try:
-        hour, minute = map(int, Config.BACKUP_TIME.split(':'))
-    except ValueError:
-        hour, minute = 2, 0  # デフォルト 02:00
+    # USBが接続されているか確認
+    usb_checker = USBChecker()
+    if not usb_checker.is_usb_valid():
+        logger.warning("USB未接続または不一致: バックアップをスキップ")
+        return False, "USB未接続または不一致"
 
-    scheduler.add_job(
-        scheduled_backup,
-        'cron',
-        hour=hour,
-        minute=minute,
-        id='daily_backup'
-    )
-    scheduler.start()
-    logger.info(f"スケジューラー開始: 毎日 {hour:02d}:{minute:02d} にバックアップ")
+    # バックアップ実行
+    logger.info("初回起動バックアップ開始")
+    success, message, path = backup_manager.create_backup()
+
+    if success:
+        # バックアップ日を記録
+        AppSettings.set('last_backup_date', today)
+        logger.info(f"初回起動バックアップ完了: {path}")
+        return True, f"バックアップ完了: {path}"
+    else:
+        logger.error(f"初回起動バックアップ失敗: {message}")
+        return False, message
 
 
 # ============================================================
@@ -716,8 +831,13 @@ if __name__ == '__main__':
     # データベース初期化
     init_db()
 
-    # スケジューラー開始
-    start_scheduler()
+    # その日の初回起動時バックアップ
+    with app.app_context():
+        backup_success, backup_message = check_and_run_daily_backup()
+        if backup_success:
+            print(f"💾 バックアップ: {backup_message}")
+        else:
+            print(f"⚠️  バックアップ: {backup_message}")
 
     # アプリ起動
     print("\n🎀 バーコード管理アプリを起動しています...")

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Patho Record</title>
+    <title>Patho Return</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <!-- Phosphor Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.2/src/regular/style.css" />
@@ -14,7 +14,7 @@
     <!-- ヘッダー -->
     <header class="header">
         <div class="header-left">
-            <span class="logo"><i class="ph-bold ph-flask"></i> Patho Record</span>
+            <span class="logo"><i class="ph-bold ph-cube"></i> Patho Return</span>
         </div>
         <div class="header-right">
             <div class="status-badges">
@@ -122,6 +122,9 @@
                         <button class="filter-tab" data-filter="today" onclick="setFilter('today')">
                             今日
                         </button>
+                        <button class="filter-tab" data-filter="yesterday" onclick="setFilter('yesterday')">
+                            昨日
+                        </button>
                         <button class="filter-tab" data-filter="unreturned" onclick="setFilter('unreturned')">
                             未返却
                             <span class="count" id="unreturnedCount">{{ unreturned_count }}</span>
@@ -129,6 +132,9 @@
                         <button class="filter-tab" data-filter="overdue" onclick="setFilter('overdue')">
                             期限超過
                             <span class="count" id="overdueCount">{{ overdue_count }}</span>
+                        </button>
+                        <button class="filter-tab sort-tab" data-sort="barcode" onclick="setSort('barcode')">
+                            バーコード順
                         </button>
                     </div>
 
@@ -142,16 +148,13 @@
                                     <th>個数</th>
                                     <th>スキャン者</th>
                                     <th>スキャン日時</th>
-                                    <th>返却期限</th>
-                                    <th>結果</th>
-                                    <th>ブロック個数</th>
                                     <th>メモ</th>
                                     <th>操作</th>
                                 </tr>
                             </thead>
                             <tbody id="historyTable">
                                 <tr>
-                                    <td colspan="10" class="text-center">
+                                    <td colspan="7" class="text-center">
                                         <div class="loading">
                                             <div class="spinner"></div>
                                         </div>
@@ -180,14 +183,33 @@
                         <select class="form-input" id="returnSortSelect" onchange="loadReturnList()">
                             <option value="newest">新しい順</option>
                             <option value="oldest">古い順</option>
-                            <option value="overdue">期限超過順</option>
                         </select>
+                        <label class="toggle-completed">
+                            <input type="checkbox" id="showCompletedToggle" onchange="loadReturnList()">
+                            <span>完了を表示</span>
+                        </label>
                     </div>
                 </div>
                 <div class="card-body">
+                    <!-- 返却フィルタータブ -->
+                    <div class="filter-tabs return-filter-tabs">
+                        <button class="filter-tab active" data-filter="all" onclick="setReturnFilter('all')">
+                            全件
+                        </button>
+                        <button class="filter-tab" data-filter="today" onclick="setReturnFilter('today')">
+                            今日
+                        </button>
+                        <button class="filter-tab" data-filter="yesterday" onclick="setReturnFilter('yesterday')">
+                            昨日
+                        </button>
+                        <button class="filter-tab sort-tab" data-sort="barcode" onclick="setReturnSort('barcode')">
+                            バーコード順
+                        </button>
+                    </div>
+
                     <p class="return-hint">
-                        <i class="ph ph-hand-pointing"></i>
-                        結果はクリックで切り替え、ブロックは個数を入力（0=未返却）
+                        <i class="ph ph-info"></i>
+                        「完了」ボタンで返却完了（ブロック・スライドは任意）
                     </p>
 
                     <!-- 返却一覧テーブル -->
@@ -198,14 +220,15 @@
                                     <th style="width: 60px;">ID</th>
                                     <th>バーコード / メモ</th>
                                     <th style="width: 100px;">スキャン日</th>
-                                    <th style="width: 100px;">返却期限</th>
-                                    <th style="width: 100px;">結果返却</th>
-                                    <th style="width: 120px;">ブロック個数</th>
+                                    <th style="width: 90px;">結果</th>
+                                    <th style="width: 110px;">ブロック</th>
+                                    <th style="width: 110px;">スライド</th>
+                                    <th style="width: 100px;">操作</th>
                                 </tr>
                             </thead>
                             <tbody id="returnTable">
                                 <tr>
-                                    <td colspan="6" class="text-center">
+                                    <td colspan="7" class="text-center">
                                         <div class="loading">
                                             <div class="spinner"></div>
                                         </div>
@@ -257,21 +280,21 @@
                     <input type="number" class="form-input" id="editQuantity" min="1">
                 </div>
                 <div class="form-group mb-4">
-                    <label class="form-label">返却期限</label>
-                    <input type="date" class="form-input" id="editReturnDate">
-                </div>
-                <div class="form-group mb-4">
-                    <label class="form-label">ステータス</label>
+                    <label class="form-label">結果返却</label>
                     <div class="toggle-group">
                         <label class="toggle-item">
                             <input type="checkbox" class="toggle-checkbox" id="editReturned">
-                            <span>結果返却</span>
+                            <span>返却済み</span>
                         </label>
                     </div>
                 </div>
                 <div class="form-group mb-4">
-                    <label class="form-label">ブロック個数（0=未返却）</label>
+                    <label class="form-label">ブロック個数</label>
                     <input type="number" class="form-input" id="editBlockQuantity" min="0" value="0">
+                </div>
+                <div class="form-group mb-4">
+                    <label class="form-label">スライド個数</label>
+                    <input type="number" class="form-input" id="editSlideQuantity" min="0" value="0">
                 </div>
                 <div class="form-group">
                     <label class="form-label">メモ</label>
@@ -294,8 +317,11 @@
         let currentFilter = 'all';
         let currentPage = 1;
         let currentSearch = '';
+        let currentSort = 'newest';
         let returnPage = 1;
         let returnSearch = '';
+        let returnFilter = 'all';
+        let returnSort = 'newest';
 
         // 個数の増減
         function updateQuantity(change) {
@@ -438,10 +464,73 @@
         // 返却処理
         // ============================================================
 
+        function setReturnFilter(filter) {
+            returnFilter = filter;
+            returnPage = 1;
+            // フィルター変更時はソートを既存セレクトの値に戻す
+            returnSort = document.getElementById('returnSortSelect').value;
+
+            // 返却フィルタータブのみ更新
+            document.querySelectorAll('.return-filter-tabs .filter-tab').forEach(tab => {
+                tab.classList.remove('active');
+                if (tab.dataset.filter === filter && !tab.classList.contains('sort-tab')) {
+                    tab.classList.add('active');
+                }
+            });
+            // ソートタブのactiveを解除
+            document.querySelectorAll('.return-filter-tabs .sort-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+
+            loadReturnList();
+        }
+
+        function setReturnSort(sort) {
+            // 同じソートをクリックしたらnewestに戻す（トグル動作）
+            if (returnSort === sort) {
+                returnSort = document.getElementById('returnSortSelect').value;
+            } else {
+                returnSort = sort;
+            }
+            returnPage = 1;
+
+            // ソートタブの状態更新
+            document.querySelectorAll('.return-filter-tabs .sort-tab').forEach(tab => {
+                tab.classList.remove('active');
+                if (tab.dataset.sort === returnSort) {
+                    tab.classList.add('active');
+                }
+            });
+
+            loadReturnList();
+        }
+
         function loadReturnList() {
-            const sort = document.getElementById('returnSortSelect').value;
+            // ソートタブが選択されていなければセレクトボックスの値を使用
+            const sortTabActive = document.querySelector('.return-filter-tabs .sort-tab.active');
+            const sort = sortTabActive ? returnSort : document.getElementById('returnSortSelect').value;
+            const showCompleted = document.getElementById('showCompletedToggle').checked;
+
+            // フィルター決定: フィルタータブ + 完了表示チェック
+            let filterValue;
+            if (showCompleted) {
+                // 完了を表示: そのままフィルターを使用
+                filterValue = returnFilter;
+            } else {
+                // 完了を非表示: 日付フィルター + incomplete の組み合わせ
+                if (returnFilter === 'all') {
+                    filterValue = 'incomplete';
+                } else if (returnFilter === 'today') {
+                    filterValue = 'today_incomplete';
+                } else if (returnFilter === 'yesterday') {
+                    filterValue = 'yesterday_incomplete';
+                } else {
+                    filterValue = returnFilter;
+                }
+            }
+
             const params = new URLSearchParams({
-                filter: 'incomplete',
+                filter: filterValue,
                 page: returnPage,
                 per_page: 30,
                 sort: sort
@@ -475,7 +564,7 @@
             if (items.length === 0) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="6">
+                        <td colspan="7">
                             <div class="empty-state" style="padding: 40px 0;">
                                 <div class="empty-state-icon"><i class="ph ph-check-circle"></i></div>
                                 <div class="empty-state-title">未完了のデータがありません</div>
@@ -487,13 +576,13 @@
             }
 
             tbody.innerHTML = items.map(item => {
-                const isOverdue = item.is_overdue;
                 const scannedAt = new Date(item.scanned_at);
-                const expectedReturn = item.expected_return_date ? new Date(item.expected_return_date) : null;
                 const blockQty = item.block_quantity || 0;
+                const slideQty = item.slide_quantity || 0;
+                const isComplete = item.all_returned;
 
                 return `
-                    <tr class="${isOverdue ? 'overdue' : ''}" data-id="${item.id}">
+                    <tr class="${isComplete ? 'completed' : ''}" data-id="${item.id}">
                         <td class="return-id">#${item.id}</td>
                         <td>
                             <div class="return-info">
@@ -503,57 +592,119 @@
                         </td>
                         <td>${formatDateShort(scannedAt)}</td>
                         <td>
-                            ${expectedReturn ? formatDateShort(expectedReturn) : '-'}
-                            ${isOverdue ? '<span class="overdue-badge">超過</span>' : ''}
-                        </td>
-                        <td>
                             <button class="return-toggle ${item.returned ? 'active' : ''}"
-                                    onclick="toggleReturn(${item.id}, 'returned', ${!item.returned})">
+                                    onclick="toggleReturnField(${item.id}, 'returned', ${!item.returned})">
                                 <i class="ph ${item.returned ? 'ph-fill ph-check-circle' : 'ph ph-circle'}"></i>
                                 ${item.returned ? '済' : '未'}
                             </button>
                         </td>
                         <td>
                             <div class="block-quantity-input">
-                                <button type="button" class="block-stepper-btn" onclick="updateBlockQuantity(${item.id}, ${blockQty - 1})">
+                                <button type="button" class="block-stepper-btn" onclick="changeBlockQty(${item.id}, ${blockQty - 1})">
                                     <i class="ph-bold ph-minus"></i>
                                 </button>
                                 <input type="number" class="block-qty-input ${blockQty > 0 ? 'has-value' : ''}"
-                                       value="${blockQty}" min="0"
-                                       onchange="updateBlockQuantity(${item.id}, this.value)">
-                                <button type="button" class="block-stepper-btn" onclick="updateBlockQuantity(${item.id}, ${blockQty + 1})">
+                                       id="block_${item.id}" value="${blockQty}" min="0">
+                                <button type="button" class="block-stepper-btn" onclick="changeBlockQty(${item.id}, ${blockQty + 1})">
                                     <i class="ph-bold ph-plus"></i>
                                 </button>
                             </div>
+                        </td>
+                        <td>
+                            <div class="block-quantity-input">
+                                <button type="button" class="block-stepper-btn" onclick="changeSlideQty(${item.id}, ${slideQty - 1})">
+                                    <i class="ph-bold ph-minus"></i>
+                                </button>
+                                <input type="number" class="block-qty-input ${slideQty > 0 ? 'has-value' : ''}"
+                                       id="slide_${item.id}" value="${slideQty}" min="0">
+                                <button type="button" class="block-stepper-btn" onclick="changeSlideQty(${item.id}, ${slideQty + 1})">
+                                    <i class="ph-bold ph-plus"></i>
+                                </button>
+                            </div>
+                        </td>
+                        <td>
+                            <button class="btn ${isComplete ? 'btn-secondary' : 'btn-primary'} btn-sm"
+                                    onclick="completeReturn(${item.id})"
+                                    ${isComplete ? 'disabled' : ''}>
+                                <i class="ph ph-check"></i>
+                                ${isComplete ? '完了済' : '完了'}
+                            </button>
                         </td>
                     </tr>
                 `;
             }).join('');
         }
 
-        function toggleReturn(itemId, field, value) {
-            const data = {};
-            data[field] = value;
+        // 結果返却フィールドの切り替え（トグル）- サーバーに保存
+        function toggleReturnField(itemId, field, value) {
+            // まずボタンの視覚的な状態を切り替え
+            const button = document.querySelector(`button[onclick*="toggleReturnField(${itemId}"]`);
+            if (button) {
+                if (value) {
+                    button.classList.add('active');
+                    button.innerHTML = '<i class="ph ph-fill ph-check-circle"></i> 済';
+                    button.setAttribute('onclick', `toggleReturnField(${itemId}, '${field}', false)`);
+                } else {
+                    button.classList.remove('active');
+                    button.innerHTML = '<i class="ph ph-circle"></i> 未';
+                    button.setAttribute('onclick', `toggleReturnField(${itemId}, '${field}', true)`);
+                }
+            }
 
+            // サーバーに保存
             fetch(`/update/${itemId}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'X-Requested-With': 'XMLHttpRequest'
                 },
-                body: JSON.stringify(data)
+                body: JSON.stringify({ [field]: value })
             })
             .then(response => response.json())
             .then(result => {
-                if (result.success) {
-                    // 両方完了したらメッセージ
-                    if (result.item.returned && result.item.block_returned) {
-                        showToast('完了しました！', 'success');
+                if (!result.success) {
+                    showToast(result.error, 'error');
+                    // 失敗時は視覚状態を戻す
+                    if (button) {
+                        if (!value) {
+                            button.classList.add('active');
+                            button.innerHTML = '<i class="ph ph-fill ph-check-circle"></i> 済';
+                            button.setAttribute('onclick', `toggleReturnField(${itemId}, '${field}', false)`);
+                        } else {
+                            button.classList.remove('active');
+                            button.innerHTML = '<i class="ph ph-circle"></i> 未';
+                            button.setAttribute('onclick', `toggleReturnField(${itemId}, '${field}', true)`);
+                        }
                     }
-                    loadReturnList();
-                    loadHistory();
-                    updateIncompleteCount();
-                } else {
+                }
+            })
+            .catch(error => {
+                showToast('エラーが発生しました', 'error');
+            });
+        }
+
+        // ブロック個数の増減（サーバーに保存）
+        function changeBlockQty(itemId, value) {
+            value = parseInt(value) || 0;
+            if (value < 0) value = 0;
+            const input = document.getElementById(`block_${itemId}`);
+            if (input) {
+                input.value = value;
+                input.classList.toggle('has-value', value > 0);
+            }
+
+            // サーバーに保存
+            fetch(`/update/${itemId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify({ block_quantity: value })
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (!result.success) {
                     showToast(result.error, 'error');
                 }
             })
@@ -562,25 +713,53 @@
             });
         }
 
-        function updateBlockQuantity(itemId, quantity) {
-            quantity = parseInt(quantity) || 0;
-            if (quantity < 0) quantity = 0;
+        // スライド個数の増減（サーバーに保存）
+        function changeSlideQty(itemId, value) {
+            value = parseInt(value) || 0;
+            if (value < 0) value = 0;
+            const input = document.getElementById(`slide_${itemId}`);
+            if (input) {
+                input.value = value;
+                input.classList.toggle('has-value', value > 0);
+            }
 
+            // サーバーに保存
             fetch(`/update/${itemId}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'X-Requested-With': 'XMLHttpRequest'
                 },
-                body: JSON.stringify({ block_quantity: quantity })
+                body: JSON.stringify({ slide_quantity: value })
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (!result.success) {
+                    showToast(result.error, 'error');
+                }
+            })
+            .catch(error => {
+                showToast('エラーが発生しました', 'error');
+            });
+        }
+
+        // 完了ボタン押下時に完了フラグを設定
+        function completeReturn(itemId) {
+            // 完了フラグを設定（completedをtrueに）
+            fetch(`/update/${itemId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify({
+                    completed: true
+                })
             })
             .then(response => response.json())
             .then(result => {
                 if (result.success) {
-                    // 両方完了したらメッセージ
-                    if (result.item.returned && result.item.block_returned) {
-                        showToast('完了しました！', 'success');
-                    }
+                    showToast('完了しました！', 'success');
                     loadReturnList();
                     loadHistory();
                     updateIncompleteCount();
@@ -635,10 +814,38 @@
         function setFilter(filter) {
             currentFilter = filter;
             currentPage = 1;
+            // フィルター変更時はソートをリセット
+            currentSort = 'newest';
 
-            document.querySelectorAll('.filter-tab').forEach(tab => {
+            // スキャン履歴のフィルタータブのみ更新
+            document.querySelectorAll('#tabHistory .filter-tab').forEach(tab => {
                 tab.classList.remove('active');
-                if (tab.dataset.filter === filter) {
+                if (tab.dataset.filter === filter && !tab.classList.contains('sort-tab')) {
+                    tab.classList.add('active');
+                }
+            });
+            // ソートタブのactiveを解除
+            document.querySelectorAll('#tabHistory .sort-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+
+            updateExportUrl();
+            loadHistory();
+        }
+
+        function setSort(sort) {
+            // 同じソートをクリックしたらnewestに戻す（トグル動作）
+            if (currentSort === sort) {
+                currentSort = 'newest';
+            } else {
+                currentSort = sort;
+            }
+            currentPage = 1;
+
+            // ソートタブの状態更新
+            document.querySelectorAll('#tabHistory .sort-tab').forEach(tab => {
+                tab.classList.remove('active');
+                if (tab.dataset.sort === currentSort) {
                     tab.classList.add('active');
                 }
             });
@@ -663,7 +870,8 @@
             const params = new URLSearchParams({
                 filter: currentFilter,
                 page: currentPage,
-                per_page: 50
+                per_page: 50,
+                sort: currentSort
             });
 
             if (currentSearch) {
@@ -693,7 +901,7 @@
             if (items.length === 0) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="10">
+                        <td colspan="7">
                             <div class="empty-state">
                                 <div class="empty-state-icon"><i class="ph ph-package"></i></div>
                                 <div class="empty-state-title">データがありません</div>
@@ -705,31 +913,15 @@
             }
 
             tbody.innerHTML = items.map(item => {
-                const isOverdue = item.is_overdue;
                 const scannedAt = new Date(item.scanned_at);
-                const expectedReturn = item.expected_return_date ? new Date(item.expected_return_date) : null;
 
                 return `
-                    <tr class="${isOverdue ? 'overdue' : ''}">
+                    <tr>
                         <td>${item.id}</td>
                         <td><strong>${item.barcode ? escapeHtml(item.barcode) : '<span class="text-muted">-</span>'}</strong></td>
                         <td>${item.quantity}</td>
                         <td>${escapeHtml(item.scanned_by_name || '-')}</td>
                         <td>${formatDate(scannedAt)}</td>
-                        <td>
-                            ${expectedReturn ? formatDate(expectedReturn, true) : '-'}
-                            ${isOverdue ? '<span class="status status-overdue">超過</span>' : ''}
-                        </td>
-                        <td>
-                            <span class="status ${item.returned ? 'status-returned' : 'status-pending'}">
-                                ${item.returned ? '済' : '未'}
-                            </span>
-                        </td>
-                        <td>
-                            <span class="status ${item.block_returned ? 'status-returned' : 'status-pending'}">
-                                ${item.block_quantity || 0}
-                            </span>
-                        </td>
                         <td>${escapeHtml(item.notes || '-')}</td>
                         <td>
                             <div class="actions">
@@ -776,24 +968,27 @@
         // ============================================================
 
         function showEditModal(itemId) {
-            fetch(`/history?filter=all&search=${itemId}`)
+            fetch(`/item/${itemId}`)
                 .then(response => response.json())
                 .then(data => {
-                    const item = data.items.find(i => i.id === itemId);
-                    if (!item) {
+                    if (!data.success || !data.item) {
                         showToast('データが見つかりません', 'error');
                         return;
                     }
 
+                    const item = data.item;
                     document.getElementById('editItemId').value = item.id;
                     document.getElementById('editBarcode').value = item.barcode || '';
                     document.getElementById('editQuantity').value = item.quantity;
-                    document.getElementById('editReturnDate').value = item.expected_return_date ? item.expected_return_date.split('T')[0] : '';
                     document.getElementById('editReturned').checked = item.returned;
                     document.getElementById('editBlockQuantity').value = item.block_quantity || 0;
+                    document.getElementById('editSlideQuantity').value = item.slide_quantity || 0;
                     document.getElementById('editNotes').value = item.notes || '';
 
                     document.getElementById('editModal').classList.add('active');
+                })
+                .catch(error => {
+                    showToast('データの取得に失敗しました', 'error');
                 });
         }
 
@@ -805,9 +1000,9 @@
             const itemId = document.getElementById('editItemId').value;
             const data = {
                 quantity: parseInt(document.getElementById('editQuantity').value),
-                expected_return_date: document.getElementById('editReturnDate').value || null,
                 returned: document.getElementById('editReturned').checked,
                 block_quantity: parseInt(document.getElementById('editBlockQuantity').value) || 0,
+                slide_quantity: parseInt(document.getElementById('editSlideQuantity').value) || 0,
                 notes: document.getElementById('editNotes').value.trim()
             };
 
