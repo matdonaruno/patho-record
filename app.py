@@ -5,8 +5,15 @@ import os
 import json
 import csv
 import io
+import subprocess
+import urllib.request
+import urllib.error
 from datetime import datetime, timedelta
 from functools import wraps
+
+# アプリバージョン
+APP_VERSION = "1.1.0"
+GITHUB_REPO = "matdonaruno/patho-record"
 
 from flask import (
     Flask, render_template, request, jsonify, session,
@@ -760,6 +767,120 @@ def get_usb_devices():
     return jsonify({
         'devices': devices
     })
+
+
+# ============================================================
+# アップデート機能
+# ============================================================
+
+@app.route('/settings/version')
+@login_required
+def get_version():
+    """現在のバージョンを取得"""
+    return jsonify({
+        'version': APP_VERSION
+    })
+
+
+@app.route('/settings/check-update')
+@login_required
+def check_update():
+    """GitHubから最新バージョンを確認"""
+    try:
+        url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+        req = urllib.request.Request(url, headers={'User-Agent': 'Patho-Return-App'})
+        with urllib.request.urlopen(req, timeout=10) as response:
+            data = json.loads(response.read().decode('utf-8'))
+            latest_version = data.get('tag_name', '').lstrip('v')
+            release_name = data.get('name', '')
+            release_body = data.get('body', '')
+            published_at = data.get('published_at', '')
+
+            # バージョン比較（簡易版）
+            current_parts = [int(x) for x in APP_VERSION.split('.')]
+            latest_parts = [int(x) for x in latest_version.split('.') if x.isdigit()]
+
+            has_update = False
+            if len(latest_parts) >= 3:
+                for i in range(min(len(current_parts), len(latest_parts))):
+                    if latest_parts[i] > current_parts[i]:
+                        has_update = True
+                        break
+                    elif latest_parts[i] < current_parts[i]:
+                        break
+
+            return jsonify({
+                'success': True,
+                'current_version': APP_VERSION,
+                'latest_version': latest_version,
+                'has_update': has_update,
+                'release_name': release_name,
+                'release_notes': release_body,
+                'published_at': published_at
+            })
+    except urllib.error.URLError as e:
+        return jsonify({
+            'success': False,
+            'error': 'ネットワークエラー: インターネット接続を確認してください',
+            'current_version': APP_VERSION
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'エラー: {str(e)}',
+            'current_version': APP_VERSION
+        })
+
+
+@app.route('/settings/do-update', methods=['POST'])
+@login_required
+def do_update():
+    """git pullでアップデートを実行"""
+    try:
+        # アプリのディレクトリを取得
+        app_dir = os.path.dirname(os.path.abspath(__file__))
+
+        # git pullを実行
+        result = subprocess.run(
+            ['git', 'pull', 'origin', 'main'],
+            cwd=app_dir,
+            capture_output=True,
+            text=True,
+            timeout=60
+        )
+
+        if result.returncode == 0:
+            output = result.stdout.strip()
+            if 'Already up to date' in output or 'Already up-to-date' in output:
+                return jsonify({
+                    'success': True,
+                    'message': '既に最新版です',
+                    'needs_restart': False,
+                    'output': output
+                })
+            else:
+                return jsonify({
+                    'success': True,
+                    'message': 'アップデート完了。アプリを再起動してください。',
+                    'needs_restart': True,
+                    'output': output
+                })
+        else:
+            return jsonify({
+                'success': False,
+                'error': f'git pullに失敗しました: {result.stderr}',
+                'output': result.stdout
+            })
+    except subprocess.TimeoutExpired:
+        return jsonify({
+            'success': False,
+            'error': 'タイムアウト: 更新に時間がかかりすぎています'
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'エラー: {str(e)}'
+        })
 
 
 # ============================================================

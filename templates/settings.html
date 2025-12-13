@@ -201,6 +201,50 @@
                 </div>
             </div>
         </div>
+
+        <!-- アップデート -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title"><i class="ph ph-arrows-clockwise"></i> アップデート</h2>
+            </div>
+            <div class="card-body">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 20px;">
+                    <div>
+                        <p class="form-label">現在のバージョン</p>
+                        <p id="currentVersion" style="font-size: 1.2em; font-weight: bold;">
+                            <span class="text-muted">読み込み中...</span>
+                        </p>
+                    </div>
+                    <div>
+                        <p class="form-label">最新バージョン</p>
+                        <p id="latestVersion" style="font-size: 1.2em; font-weight: bold;">
+                            <span class="text-muted">-</span>
+                        </p>
+                    </div>
+                </div>
+
+                <div id="updateStatus" style="margin-bottom: 16px;"></div>
+
+                <div id="releaseNotes" style="display: none; background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 8px; padding: 12px; margin-bottom: 16px;">
+                    <p class="form-label"><i class="ph ph-note"></i> リリースノート</p>
+                    <div id="releaseNotesContent" style="white-space: pre-wrap; font-size: 0.9em;"></div>
+                </div>
+
+                <div style="display: flex; gap: 8px;">
+                    <button class="btn btn-secondary" onclick="checkUpdate()" id="checkUpdateBtn">
+                        <i class="ph ph-magnifying-glass"></i> アップデート確認
+                    </button>
+                    <button class="btn btn-primary" onclick="doUpdate()" id="doUpdateBtn" style="display: none;">
+                        <i class="ph ph-download"></i> 今すぐ更新
+                    </button>
+                </div>
+
+                <p class="text-muted mt-4" style="font-size: 0.85em;">
+                    <i class="ph ph-info"></i> アップデートを確認するにはインターネット接続が必要です。<br>
+                    更新後はアプリの再起動が必要な場合があります。
+                </p>
+            </div>
+        </div>
     </main>
 
     <!-- ユーザー追加モーダル -->
@@ -288,6 +332,7 @@
             loadAuditLogs();
             loadUsbDeviceId();
             loadUsbDevices();
+            loadCurrentVersion();
         });
 
         // USBデバイスID関連
@@ -594,6 +639,115 @@
                 .catch(error => {
                     document.getElementById('auditLogTable').innerHTML = '<tr><td colspan="5" class="text-center text-danger">読み込みに失敗しました</td></tr>';
                 });
+        }
+
+        // アップデート関連
+        function loadCurrentVersion() {
+            fetch('/settings/version')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('currentVersion').textContent = 'v' + data.version;
+                })
+                .catch(error => {
+                    document.getElementById('currentVersion').innerHTML = '<span class="text-danger">取得失敗</span>';
+                });
+        }
+
+        function checkUpdate() {
+            const btn = document.getElementById('checkUpdateBtn');
+            const statusDiv = document.getElementById('updateStatus');
+            const latestDiv = document.getElementById('latestVersion');
+            const doUpdateBtn = document.getElementById('doUpdateBtn');
+            const releaseNotesDiv = document.getElementById('releaseNotes');
+            const releaseNotesContent = document.getElementById('releaseNotesContent');
+
+            btn.disabled = true;
+            btn.innerHTML = '<i class="ph ph-spinner"></i> 確認中...';
+            statusDiv.innerHTML = '';
+            doUpdateBtn.style.display = 'none';
+            releaseNotesDiv.style.display = 'none';
+
+            fetch('/settings/check-update')
+                .then(response => response.json())
+                .then(data => {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="ph ph-magnifying-glass"></i> アップデート確認';
+
+                    if (!data.success) {
+                        statusDiv.innerHTML = `<span class="badge badge-danger"><i class="ph ph-warning"></i> ${data.error}</span>`;
+                        latestDiv.innerHTML = '<span class="text-muted">-</span>';
+                        return;
+                    }
+
+                    latestDiv.textContent = 'v' + data.latest_version;
+
+                    if (data.has_update) {
+                        statusDiv.innerHTML = '<span class="badge badge-warning"><i class="ph ph-arrow-up"></i> 新しいバージョンがあります</span>';
+                        doUpdateBtn.style.display = 'inline-flex';
+
+                        if (data.release_notes) {
+                            releaseNotesContent.textContent = data.release_notes;
+                            releaseNotesDiv.style.display = 'block';
+                        }
+                    } else {
+                        statusDiv.innerHTML = '<span class="badge badge-success"><i class="ph ph-check"></i> 最新版です</span>';
+                    }
+                })
+                .catch(error => {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="ph ph-magnifying-glass"></i> アップデート確認';
+                    statusDiv.innerHTML = '<span class="badge badge-danger"><i class="ph ph-warning"></i> 確認に失敗しました</span>';
+                });
+        }
+
+        function doUpdate() {
+            const btn = document.getElementById('doUpdateBtn');
+            const statusDiv = document.getElementById('updateStatus');
+
+            if (!confirm('アップデートを実行しますか？\n更新後はアプリの再起動が必要な場合があります。')) {
+                return;
+            }
+
+            btn.disabled = true;
+            btn.innerHTML = '<i class="ph ph-spinner"></i> 更新中...';
+            statusDiv.innerHTML = '<span class="badge badge-info"><i class="ph ph-spinner"></i> git pull 実行中...</span>';
+
+            fetch('/settings/do-update', {
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="ph ph-download"></i> 今すぐ更新';
+
+                if (data.success) {
+                    if (data.needs_restart) {
+                        statusDiv.innerHTML = `
+                            <div class="badge badge-success" style="display: block; padding: 12px;">
+                                <i class="ph ph-check"></i> ${data.message}<br>
+                                <small style="opacity: 0.8;">ブラウザを更新するか、アプリを再起動してください。</small>
+                            </div>
+                        `;
+                        btn.style.display = 'none';
+                        showToast('アップデート完了！再起動してください。', 'success');
+                    } else {
+                        statusDiv.innerHTML = '<span class="badge badge-success"><i class="ph ph-check"></i> ' + data.message + '</span>';
+                        showToast(data.message, 'info');
+                    }
+                } else {
+                    statusDiv.innerHTML = '<span class="badge badge-danger"><i class="ph ph-warning"></i> ' + data.error + '</span>';
+                    showToast('更新に失敗しました', 'error');
+                }
+            })
+            .catch(error => {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="ph ph-download"></i> 今すぐ更新';
+                statusDiv.innerHTML = '<span class="badge badge-danger"><i class="ph ph-warning"></i> 更新に失敗しました</span>';
+                showToast('更新に失敗しました', 'error');
+            });
         }
 
         // トースト
