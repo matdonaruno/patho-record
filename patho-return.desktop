@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Patho Return
+Comment=病理検体返却管理システム
+Exec=/path/to/patho-record/start.sh
+Icon=/path/to/patho-record/static/images/icon.svg
+Terminal=false
+Categories=Office;Medical;
+StartupNotify=true

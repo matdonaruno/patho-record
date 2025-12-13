@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#667eea"/>
+      <stop offset="100%" style="stop-color:#764ba2"/>
+    </linearGradient>
+  </defs>
+  <!-- Background -->
+  <rect width="128" height="128" rx="24" fill="url(#bg)"/>
+  <!-- Cube icon (similar to phosphor cube) -->
+  <g transform="translate(24, 24)" fill="none" stroke="white" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Front face -->
+    <path d="M40 20 L70 35 L70 70 L40 85 L10 70 L10 35 Z"/>
+    <!-- Top lines -->
+    <path d="M40 20 L40 55"/>
+    <path d="M10 35 L40 55 L70 35"/>
+  </g>
+  <!-- Return arrow -->
+  <g transform="translate(70, 70)">
+    <path d="M30 15 Q45 15 45 30 Q45 45 30 45 L20 45" fill="none" stroke="white" stroke-width="4" stroke-linecap="round"/>
+    <path d="M25 38 L18 45 L25 52" fill="none" stroke="white" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>
