@@ -108,19 +108,14 @@ class BackupManager:
             logger.error(f"ログコピー失敗: {str(e)}")
 
     def _cleanup_old_backups(self):
-        """古いバックアップを削除"""
+        """古いバックアップを削除（ローカルのみ、USBは永久保存）"""
         cutoff_date = datetime.now() - timedelta(days=self.retention_days)
 
         # ローカルバックアップのクリーンアップ
         self._cleanup_directory(self.backup_dir, cutoff_date)
 
-        # USBバックアップのクリーンアップ
-        if self.usb_checker.is_connected():
-            mount_point = self.usb_checker.get_mount_point()
-            if mount_point:
-                usb_backup_dir = os.path.join(mount_point, 'barcode_app_backups')
-                if os.path.exists(usb_backup_dir):
-                    self._cleanup_directory(usb_backup_dir, cutoff_date)
+        # USBバックアップは削除しない（アーカイブとして永久保存）
+        # 365日より古いデータはUSBから参照可能
 
     def _cleanup_directory(self, directory, cutoff_date):
         """指定ディレクトリ内の古いバックアップを削除"""
