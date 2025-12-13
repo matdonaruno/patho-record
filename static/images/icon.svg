@@ -1,23 +1,24 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
   <defs>
     <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#667eea"/>
-      <stop offset="100%" style="stop-color:#764ba2"/>
+      <stop offset="0%" style="stop-color:#FFF5F7"/>
+      <stop offset="50%" style="stop-color:#E3F2FD"/>
+      <stop offset="100%" style="stop-color:#F3E5F5"/>
     </linearGradient>
   </defs>
   <!-- Background -->
   <rect width="128" height="128" rx="24" fill="url(#bg)"/>
-  <!-- Cube icon (similar to phosphor cube) -->
-  <g transform="translate(24, 24)" fill="none" stroke="white" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Cube icon (centered) -->
+  <g transform="translate(24, 20)" fill="none" stroke="#FF9EB5" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
     <!-- Front face -->
-    <path d="M40 20 L70 35 L70 70 L40 85 L10 70 L10 35 Z"/>
-    <!-- Top lines -->
-    <path d="M40 20 L40 55"/>
-    <path d="M10 35 L40 55 L70 35"/>
+    <path d="M40 15 L72 32 L72 68 L40 85 L8 68 L8 32 Z"/>
+    <!-- Inner lines -->
+    <path d="M40 15 L40 52"/>
+    <path d="M8 32 L40 52 L72 32"/>
   </g>
   <!-- Return arrow -->
-  <g transform="translate(70, 70)">
-    <path d="M30 15 Q45 15 45 30 Q45 45 30 45 L20 45" fill="none" stroke="white" stroke-width="4" stroke-linecap="round"/>
-    <path d="M25 38 L18 45 L25 52" fill="none" stroke="white" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <g transform="translate(58, 68)">
+    <path d="M32 12 Q50 12 50 30 Q50 48 32 48 L18 48" fill="none" stroke="#90CAF9" stroke-width="5" stroke-linecap="round"/>
+    <path d="M24 40 L16 48 L24 56" fill="none" stroke="#90CAF9" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
 </svg>
