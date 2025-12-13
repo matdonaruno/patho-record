@@ -39,6 +39,42 @@ cd patho-record
 git pull origin main
 ```
 
+## 使い方
+
+1. **検体登録**: メイン画面でバーコードをスキャン → 検体情報が登録される
+2. **返却処理**: 履歴から検体を選択 → 返却状態を更新
+   - 主治医返却 / 病理返却 / 患者返却 の3段階
+3. **履歴検索**: フィルタ機能で返却状況を絞り込み
+
+## データ管理
+
+### バックアップ
+
+| 保存先 | 場所 | 保持期間 |
+|--------|------|----------|
+| ローカル | `data/app.db` | 365日（自動削除） |
+| USB | `barcode_app_backups/` | 永久保存 |
+
+- バックアップはアプリ起動時に自動実行
+- USBが接続されている場合、USBにもコピーされる
+
+### 古いデータの参照（365日以前）
+
+USBに保存されたバックアップファイルを直接参照できます：
+
+```bash
+# 1. USBのバックアップ一覧を確認
+ls /media/usb_backup/barcode_app_backups/
+
+# 2. SQLiteで開く（読み取り専用で安全に閲覧）
+sqlite3 -readonly /media/usb_backup/barcode_app_backups/20240101_020000_app.db
+
+# 3. データを確認（例：検体一覧）
+SELECT * FROM items WHERE created_at < '2024-01-01';
+```
+
+※ DB Browser for SQLite（GUI）でも開けます
+
 ## 技術スタック
 
 - Python 3 / Flask
