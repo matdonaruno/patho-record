@@ -29,7 +29,7 @@ class Config:
 
     # バックアップ
     BACKUP_TIME = os.getenv('BACKUP_TIME', '02:00')
-    BACKUP_RETENTION_DAYS = int(os.getenv('BACKUP_RETENTION_DAYS', '30'))
+    BACKUP_RETENTION_DAYS = int(os.getenv('BACKUP_RETENTION_DAYS', '365'))
     BACKUP_DIR = os.path.join(BASE_DIR, 'backups')
 
     # 返却期限
