@@ -955,6 +955,85 @@ def init_db():
             logger.info("デフォルト管理者ユーザーを作成しました（初期パスワード: admin）")
 
 
+def auto_update():
+    """起動時の自動アップデート"""
+    try:
+        app_dir = os.path.dirname(os.path.abspath(__file__))
+
+        # git pullを実行
+        result = subprocess.run(
+            ['git', 'pull', 'origin', 'main'],
+            cwd=app_dir,
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+
+        if result.returncode == 0:
+            output = result.stdout.strip()
+            if 'Already up to date' in output or 'Already up-to-date' in output:
+                logger.info("自動アップデート: 既に最新版です")
+                return False, "既に最新版"
+            else:
+                logger.info(f"自動アップデート: アップデート完了\n{output}")
+                print(f"\n✨ アップデート完了！最新版に更新されました\n")
+                return True, "アップデート完了"
+        else:
+            logger.warning(f"自動アップデート失敗: {result.stderr}")
+            return False, f"アップデート失敗: {result.stderr}"
+
+    except subprocess.TimeoutExpired:
+        logger.warning("自動アップデート: タイムアウト")
+        return False, "タイムアウト"
+    except Exception as e:
+        logger.warning(f"自動アップデート: エラー - {e}")
+        return False, str(e)
+
+
+def auto_migrate():
+    """起動時の自動マイグレーション"""
+    import sqlite3
+
+    db_path = os.path.join(Config.BASE_DIR, Config.DATABASE_PATH)
+
+    if not os.path.exists(db_path):
+        logger.info("マイグレーション: データベースファイルが存在しません（スキップ）")
+        return
+
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        # patient_id列が既に存在するか確認
+        cursor.execute("PRAGMA table_info(item_logs)")
+        columns = [column[1] for column in cursor.fetchall()]
+
+        if 'patient_id' not in columns:
+            logger.info("マイグレーション: patient_id列を追加しています...")
+
+            # patient_id列を追加
+            cursor.execute("""
+                ALTER TABLE item_logs
+                ADD COLUMN patient_id TEXT
+            """)
+
+            # インデックスを作成
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS ix_item_logs_patient_id
+                ON item_logs (patient_id)
+            """)
+
+            conn.commit()
+            logger.info("マイグレーション: patient_id列を追加しました")
+
+        conn.close()
+
+    except Exception as e:
+        logger.error(f"マイグレーション失敗: {e}")
+        if 'conn' in locals():
+            conn.close()
+
+
 def check_and_run_daily_backup():
     """その日の初回起動時バックアップを確認・実行"""
     today = datetime.utcnow().strftime('%Y-%m-%d')
@@ -994,6 +1073,12 @@ if __name__ == '__main__':
     os.makedirs('logs', exist_ok=True)
     os.makedirs('backups', exist_ok=True)
 
+    # 自動アップデート
+    print("🔄 アップデートを確認しています...")
+    updated, message = auto_update()
+    if updated:
+        print("✨ 最新版に更新されました")
+
     # USB チェック
     success, message, can_continue = check_usb_on_startup()
     logger.info(f"USB チェック: {message}")
@@ -1005,6 +1090,9 @@ if __name__ == '__main__':
 
     # データベース初期化
     init_db()
+
+    # 自動マイグレーション
+    auto_migrate()
 
     # その日の初回起動時バックアップ
     with app.app_context():
