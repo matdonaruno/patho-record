@@ -76,7 +76,10 @@
                                 <td>
                                     <div class="actions">
                                         <button class="btn btn-secondary btn-sm" onclick="editUser({{ u.id }}, '{{ u.name }}', {{ 'true' if u.is_active else 'false' }}, {{ 'true' if u.is_admin else 'false' }}, {{ 'true' if u.has_password else 'false' }})">
-                                            編集
+                                            <i class="ph ph-pencil-simple"></i> 編集
+                                        </button>
+                                        <button class="btn btn-danger btn-sm" onclick="confirmDeleteUser({{ u.id }}, '{{ u.name }}')">
+                                            <i class="ph ph-trash"></i> 削除
                                         </button>
                                     </div>
                                 </td>
@@ -322,6 +325,32 @@
         </div>
     </div>
 
+    <!-- ユーザー削除確認モーダル -->
+    <div class="modal-overlay" id="deleteUserModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title"><i class="ph ph-warning"></i> ユーザー削除確認</h3>
+                <button class="modal-close" onclick="hideDeleteUserModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="deleteUserId">
+                <p style="margin-bottom: 20px;">
+                    本当に以下のユーザーを削除しますか？<br>
+                    <strong style="font-size: 18px; color: var(--danger);" id="deleteUserName"></strong>
+                </p>
+                <p style="color: var(--text-sub); font-size: 14px;">
+                    <i class="ph ph-info"></i> この操作は取り消せません。削除されたユーザーのスキャン履歴は残りますが、ユーザーとしてログインできなくなります。
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="hideDeleteUserModal()">キャンセル</button>
+                <button class="btn btn-danger" onclick="deleteUser()">
+                    <i class="ph ph-trash"></i> 削除する
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- トースト -->
     <div class="toast-container" id="toastContainer"></div>
 
@@ -505,6 +534,42 @@
                 if (result.success) {
                     showToast('更新しました', 'success');
                     hideEditUserModal();
+                    location.reload();
+                } else {
+                    showToast(result.error, 'error');
+                }
+            })
+            .catch(error => {
+                showToast('エラーが発生しました', 'error');
+            });
+        }
+
+        // ユーザー削除関連
+        function confirmDeleteUser(userId, userName) {
+            document.getElementById('deleteUserId').value = userId;
+            document.getElementById('deleteUserName').textContent = userName;
+            document.getElementById('deleteUserModal').classList.add('active');
+        }
+
+        function hideDeleteUserModal() {
+            document.getElementById('deleteUserModal').classList.remove('active');
+        }
+
+        function deleteUser() {
+            const userId = document.getElementById('deleteUserId').value;
+
+            fetch(`/users/${userId}/delete`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    showToast('ユーザーを削除しました', 'success');
+                    hideDeleteUserModal();
                     location.reload();
                 } else {
                     showToast(result.error, 'error');

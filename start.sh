@@ -13,11 +13,8 @@ if lsof -ti:5000 &> /dev/null; then
     exit 0
 fi
 
-# 仮想環境を有効化
-source venv/bin/activate
-
-# アプリをバックグラウンドで起動
-python app.py &
+# アプリをバックグラウンドで起動（仮想環境のPythonを直接使用）
+venv/bin/python app.py &
 APP_PID=$!
 
 # 起動を待つ

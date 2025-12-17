@@ -4,29 +4,29 @@
 
 /* カラーパレット */
 :root {
-    /* クリーミーパステル */
-    --pastel-pink: #FFD6E0;
-    --pastel-pink-dark: #FF9EBB;
-    --pastel-blue: #C4E6FF;
-    --pastel-blue-dark: #82C5FF;
-    --pastel-green: #D4F0F0;
-    --pastel-green-dark: #8CCCC9;
-    --pastel-yellow: #FFF5BA;
-    --pastel-yellow-dark: #FFD93D;
-    --pastel-lavender: #ECD4FF;
-    
-    /* テキストカラー（黒を使わず柔らかい色に） */
-    --text-main: #5D576B; 
-    --text-sub: #9FA2B4;
+    /* クリーミーパステル（視認性向上版） */
+    --pastel-pink: #FFB8CB;
+    --pastel-pink-dark: #FF7AA8;
+    --pastel-blue: #A8D8FF;
+    --pastel-blue-dark: #5BB0FF;
+    --pastel-green: #B8E5E5;
+    --pastel-green-dark: #6ABBB8;
+    --pastel-yellow: #FFEA8A;
+    --pastel-yellow-dark: #FFC700;
+    --pastel-lavender: #DDB8FF;
+
+    /* テキストカラー（視認性向上版） */
+    --text-main: #4A4456;
+    --text-sub: #7D8199;
     --text-white: #FFFFFF;
 
-    /* 機能色 */
-    --danger: #FF8BA7;
-    --danger-bg: #FFF0F5;
-    --success: #8CCFBA;
-    --success-bg: #F0FAF5;
-    --warning: #FFD93D;
-    --warning-bg: #FFFDF0;
+    /* 機能色（視認性向上版） */
+    --danger: #FF6B8F;
+    --danger-bg: #FFE8EF;
+    --success: #6ABAA0;
+    --success-bg: #E8F5F1;
+    --warning: #FFC700;
+    --warning-bg: #FFF8E1;
 
     /* シャドウとボーダー */
     --shadow-soft: 0 8px 20px rgba(149, 157, 165, 0.1), 0 2px 8px rgba(149, 157, 165, 0.05);
@@ -266,7 +266,7 @@ body {
 
 .badge-warning {
     background: var(--warning-bg);
-    color: #F0B400;
+    color: #E6A800;
     border: 1px solid var(--warning);
 }
 
@@ -282,10 +282,63 @@ body {
 
 .login-container {
     display: flex;
+    flex-direction: column;
     justify-content: center;
     align-items: center;
     min-height: 100vh;
     padding: 20px;
+}
+
+/* USB接続状態バナー */
+.usb-banner {
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 20px;
+    padding: 20px 24px;
+    width: 100%;
+    max-width: 500px;
+    box-shadow: var(--shadow-soft);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+    border: 2px solid;
+    font-size: 16px;
+    font-weight: 500;
+}
+
+.usb-banner i {
+    font-size: 28px;
+    flex-shrink: 0;
+}
+
+.usb-banner-warning {
+    background: linear-gradient(135deg, rgba(255, 184, 203, 0.2), rgba(255, 122, 168, 0.25));
+    border-color: var(--pastel-pink-dark);
+    color: #8B4557;
+}
+
+.usb-banner-warning i {
+    color: var(--pastel-pink-dark);
+}
+
+.usb-banner-success {
+    background: linear-gradient(135deg, rgba(184, 229, 229, 0.2), rgba(106, 187, 184, 0.25));
+    border-color: var(--pastel-green-dark);
+    color: #2D5D5A;
+}
+
+.usb-banner-success i {
+    color: var(--pastel-green-dark);
+}
+
+.usb-banner-dev {
+    background: linear-gradient(135deg, rgba(168, 216, 255, 0.2), rgba(91, 176, 255, 0.25));
+    border-color: var(--pastel-blue-dark);
+    color: #2D4A6E;
+}
+
+.usb-banner-dev i {
+    color: var(--pastel-blue-dark);
 }
 
 .login-card {
@@ -374,8 +427,8 @@ body {
 }
 
 .add-user-btn {
-    background: #F8F9FA;
-    border: 2px dashed #E0E0E0;
+    background: #F0F1F3;
+    border: 2px dashed #B8B8B8;
     box-shadow: none;
 }
 
@@ -475,23 +528,23 @@ body {
 /* 脈動アニメーション */
 @keyframes scan-pulse {
     0% {
-        box-shadow: 0 0 0 4px rgba(255, 158, 187, 0.3), 
-                    0 10px 40px rgba(255, 158, 187, 0.4);
+        box-shadow: 0 0 0 4px rgba(255, 122, 168, 0.4),
+                    0 10px 40px rgba(255, 122, 168, 0.5);
     }
     50% {
-        box-shadow: 0 0 0 8px rgba(255, 158, 187, 0.2), 
-                    0 15px 50px rgba(255, 158, 187, 0.6);
-        border-color: #FF6B8B;
+        box-shadow: 0 0 0 8px rgba(255, 122, 168, 0.3),
+                    0 15px 50px rgba(255, 122, 168, 0.7);
+        border-color: #FF4D6D;
     }
     100% {
-        box-shadow: 0 0 0 4px rgba(255, 158, 187, 0.3), 
-                    0 10px 40px rgba(255, 158, 187, 0.4);
+        box-shadow: 0 0 0 4px rgba(255, 122, 168, 0.4),
+                    0 10px 40px rgba(255, 122, 168, 0.5);
     }
 }
 
 /* フォーカス時、左のバーコードアイコンをバウンドさせる */
 .barcode-input-wrapper:focus-within .barcode-icon {
-    color: #FF6B8B;
+    color: #FF4D6D;
     animation: icon-bounce 1s infinite;
 }
 
@@ -502,7 +555,7 @@ body {
 
 .barcode-icon {
     font-size: 32px;
-    color: #E0E0E0;
+    color: #B8B8B8;
     transition: all 0.3s ease;
 }
 
@@ -519,7 +572,7 @@ body {
 }
 
 .barcode-input::placeholder {
-    color: #D1D1D1;
+    color: #A8A8A8;
     font-weight: 600;
 }
 
@@ -539,10 +592,10 @@ body {
 }
 
 .barcode-input-wrapper:focus-within .scan-indicator {
-    background: #FF6B8B;
+    background: #FF4D6D;
     color: white;
     transform: scale(1.1);
-    box-shadow: 0 4px 10px rgba(255, 107, 139, 0.3);
+    box-shadow: 0 4px 10px rgba(255, 77, 109, 0.4);
 }
 
 .barcode-input-wrapper:focus-within .scan-indicator i {
@@ -1156,7 +1209,7 @@ button.btn-register:active {
 }
 
 .toast-success {
-    background: linear-gradient(135deg, #56ab91 0%, #2ecc71 100%);
+    background: linear-gradient(135deg, #3D9B7F 0%, #27AE60 100%);
 }
 .toast-success i {
     background: rgba(255,255,255,0.3);
@@ -1166,7 +1219,7 @@ button.btn-register:active {
 }
 
 .toast-error {
-    background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+    background: linear-gradient(135deg, #D43F2F 0%, #A93226 100%);
 }
 .toast-error i {
     background: rgba(255,255,255,0.3);
@@ -1176,7 +1229,7 @@ button.btn-register:active {
 }
 
 .toast-info {
-    background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+    background: linear-gradient(135deg, #2A7FBF 0%, #1F6AA5 100%);
 }
 .toast-info i {
     background: rgba(255,255,255,0.3);
@@ -1186,7 +1239,7 @@ button.btn-register:active {
 }
 
 .toast-warning {
-    background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);
+    background: linear-gradient(135deg, #D68910 0%, #CA6F1E 100%);
 }
 .toast-warning i {
     background: rgba(255,255,255,0.3);
@@ -1432,7 +1485,7 @@ button.btn-register:active {
 
 .status-pending {
     background: var(--warning-bg);
-    color: #F0B400;
+    color: #E6A800;
 }
 
 .status-overdue {
@@ -1453,7 +1506,7 @@ button.btn-register:active {
 .empty-state-icon {
     font-size: 64px;
     margin-bottom: 16px;
-    color: #E0E0E0;
+    color: #B8B8B8;
 }
 
 .empty-state-title {
@@ -1513,7 +1566,7 @@ button.btn-register:active {
 }
 
 .toggle-completed:hover {
-    background: #dcc0f0;
+    background: #C8A0E8;
 }
 
 .toggle-completed input[type="checkbox"] {

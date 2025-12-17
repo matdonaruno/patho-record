@@ -39,3 +39,9 @@ class Config:
     LOG_FILE = os.getenv('LOG_FILE', 'logs/app.log')
     LOG_MAX_SIZE = int(os.getenv('LOG_MAX_SIZE', '10485760'))  # 10MB
     LOG_BACKUP_COUNT = int(os.getenv('LOG_BACKUP_COUNT', '5'))
+
+    # サーバー設定
+    # プロダクション: 0.0.0.0 でネットワークアクセス可能
+    # 開発: 127.0.0.1 でローカルのみ
+    HOST = os.getenv('HOST', '0.0.0.0')
+    PORT = int(os.getenv('PORT', '5000'))

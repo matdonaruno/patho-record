@@ -7,11 +7,8 @@ cd "$(dirname "$0")"
 if [ ! -d "venv" ]; then
     echo "仮想環境を作成しています..."
     python3 -m venv venv
-    source venv/bin/activate
-    pip install --upgrade pip
-    pip install -r requirements.txt
-else
-    source venv/bin/activate
+    venv/bin/pip install --upgrade pip
+    venv/bin/pip install -r requirements.txt
 fi
 
 # 必要なディレクトリ作成
@@ -24,4 +21,4 @@ echo "   Barcode Manager を起動しています..."
 echo "======================================"
 echo ""
 
-python app.py
+venv/bin/python app.py

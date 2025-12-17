@@ -31,6 +31,34 @@
     </div>
 
     <div class="login-container">
+        <!-- USB接続状態バナー -->
+        {% if usb_status %}
+            {% if not usb_status.uuid %}
+                <!-- 開発モード -->
+                <div class="usb-banner usb-banner-dev">
+                    <i class="ph-bold ph-code"></i>
+                    <span>開発モード：USB設定なし</span>
+                </div>
+            {% elif usb_status.connected %}
+                <!-- USB接続済み -->
+                <div class="usb-banner usb-banner-success">
+                    <i class="ph-bold ph-check-circle"></i>
+                    <span>バックアップ用USB接続済み</span>
+                </div>
+            {% else %}
+                <!-- USB未接続 -->
+                <div class="usb-banner usb-banner-warning">
+                    <i class="ph-bold ph-warning-circle"></i>
+                    <div>
+                        <strong>バックアップ用USBメモリを接続してください</strong>
+                        <p style="font-size: 14px; margin: 4px 0 0 0; opacity: 0.9;">
+                            一般ユーザーはUSB接続が必須です（管理者は接続不要）
+                        </p>
+                    </div>
+                </div>
+            {% endif %}
+        {% endif %}
+
         <div class="login-card">
             <div class="login-logo"><i class="ph-bold ph-cube"></i></div>
             <h1 class="login-title">Patho Return</h1>

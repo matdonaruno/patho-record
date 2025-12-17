@@ -58,6 +58,7 @@ class ItemLog(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     barcode = db.Column(db.String(4096), nullable=True, index=True)  # 2次元バーコード対応、メモのみも可
+    patient_id = db.Column(db.String(100), nullable=True, index=True)  # 患者ID
     quantity = db.Column(db.Integer, default=1)
     scanned_by_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
     scanned_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
@@ -116,6 +117,7 @@ class ItemLog(db.Model):
         return {
             'id': self.id,
             'barcode': self.barcode,
+            'patient_id': self.patient_id,
             'quantity': self.quantity,
             'scanned_by_id': self.scanned_by_id,
             'scanned_by_name': self.scanned_by.name if self.scanned_by else None,

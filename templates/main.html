@@ -74,6 +74,22 @@
                             </div>
                         </div>
 
+                        <!-- 患者ID入力エリア -->
+                        <div class="barcode-input-wrapper" id="patientIdWrapper" style="margin-top: 20px;">
+                            <div class="barcode-icon">
+                                <i class="ph-bold ph-user"></i>
+                            </div>
+                            <input type="text"
+                                   class="barcode-input"
+                                   id="patientIdInput"
+                                   placeholder="患者IDをスキャン（任意）..."
+                                   autocomplete="off">
+                            <div class="scan-indicator">
+                                <i class="ph ph-identification-card"></i>
+                                <span>任意</span>
+                            </div>
+                        </div>
+
                         <!-- サブ入力エリア -->
                         <div class="sub-inputs">
                             <div class="sub-input-group">
@@ -145,6 +161,7 @@
                                 <tr>
                                     <th>ID</th>
                                     <th>バーコード</th>
+                                    <th>患者ID</th>
                                     <th>個数</th>
                                     <th>スキャン者</th>
                                     <th>スキャン日時</th>
@@ -219,6 +236,7 @@
                                 <tr>
                                     <th style="width: 60px;">ID</th>
                                     <th>バーコード / メモ</th>
+                                    <th style="width: 120px;">患者ID</th>
                                     <th style="width: 100px;">スキャン日</th>
                                     <th style="width: 90px;">結果</th>
                                     <th style="width: 110px;">ブロック</th>
@@ -350,8 +368,32 @@
             // ページ読み込み時にバーコード入力にフォーカス
             setTimeout(focusBarcodeInput, 100);
 
-            // バーコード入力でEnter押したら登録
+            // バーコード入力でEnter → 患者IDにフォーカス移動
             document.getElementById('barcodeInput').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    document.getElementById('patientIdInput').focus();
+                }
+            });
+
+            // 患者ID入力でEnter → 個数にフォーカス移動
+            document.getElementById('patientIdInput').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    document.getElementById('quantityInput').focus();
+                }
+            });
+
+            // 個数入力でEnter → メモにフォーカス移動
+            document.getElementById('quantityInput').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    document.getElementById('notesInput').focus();
+                }
+            });
+
+            // メモ入力でEnter → 登録実行
+            document.getElementById('notesInput').addEventListener('keypress', function(e) {
                 if (e.key === 'Enter') {
                     e.preventDefault();
                     submitScan(e);
@@ -419,6 +461,7 @@
             e.preventDefault();
 
             const barcode = document.getElementById('barcodeInput').value.trim();
+            const patientId = document.getElementById('patientIdInput').value.trim();
             const notes = document.getElementById('notesInput').value.trim();
 
             if (!barcode && !notes) {
@@ -428,6 +471,7 @@
 
             const data = {
                 barcode: barcode,
+                patient_id: patientId,
                 quantity: parseInt(document.getElementById('quantityInput').value) || 1,
                 notes: notes
             };
@@ -445,6 +489,7 @@
                 if (result.success) {
                     showToast('登録しました', 'success');
                     document.getElementById('barcodeInput').value = '';
+                    document.getElementById('patientIdInput').value = '';
                     document.getElementById('quantityInput').value = '1';
                     document.getElementById('notesInput').value = '';
                     focusBarcodeInput();
@@ -590,6 +635,7 @@
                                 ${item.notes ? `<span class="return-notes">${escapeHtml(item.notes)}</span>` : ''}
                             </div>
                         </td>
+                        <td>${item.patient_id ? escapeHtml(item.patient_id) : '<span class="text-muted">-</span>'}</td>
                         <td>${formatDateShort(scannedAt)}</td>
                         <td>
                             <button class="return-toggle ${item.returned ? 'active' : ''}"
@@ -600,24 +646,24 @@
                         </td>
                         <td>
                             <div class="block-quantity-input">
-                                <button type="button" class="block-stepper-btn" onclick="changeBlockQty(${item.id}, ${blockQty - 1})">
+                                <button type="button" class="block-stepper-btn" onclick="incrementBlockQty(${item.id}, -1)">
                                     <i class="ph-bold ph-minus"></i>
                                 </button>
                                 <input type="number" class="block-qty-input ${blockQty > 0 ? 'has-value' : ''}"
                                        id="block_${item.id}" value="${blockQty}" min="0">
-                                <button type="button" class="block-stepper-btn" onclick="changeBlockQty(${item.id}, ${blockQty + 1})">
+                                <button type="button" class="block-stepper-btn" onclick="incrementBlockQty(${item.id}, 1)">
                                     <i class="ph-bold ph-plus"></i>
                                 </button>
                             </div>
                         </td>
                         <td>
                             <div class="block-quantity-input">
-                                <button type="button" class="block-stepper-btn" onclick="changeSlideQty(${item.id}, ${slideQty - 1})">
+                                <button type="button" class="block-stepper-btn" onclick="incrementSlideQty(${item.id}, -1)">
                                     <i class="ph-bold ph-minus"></i>
                                 </button>
                                 <input type="number" class="block-qty-input ${slideQty > 0 ? 'has-value' : ''}"
                                        id="slide_${item.id}" value="${slideQty}" min="0">
-                                <button type="button" class="block-stepper-btn" onclick="changeSlideQty(${item.id}, ${slideQty + 1})">
+                                <button type="button" class="block-stepper-btn" onclick="incrementSlideQty(${item.id}, 1)">
                                     <i class="ph-bold ph-plus"></i>
                                 </button>
                             </div>
@@ -684,6 +730,30 @@
         }
 
         // ブロック個数の増減（サーバーに保存）
+        // ブロック個数をインクリメント/デクリメント
+        function incrementBlockQty(itemId, delta) {
+            const input = document.getElementById(`block_${itemId}`);
+            if (!input) return;
+
+            let currentValue = parseInt(input.value) || 0;
+            let newValue = currentValue + delta;
+            if (newValue < 0) newValue = 0;
+
+            changeBlockQty(itemId, newValue);
+        }
+
+        // スライド個数をインクリメント/デクリメント
+        function incrementSlideQty(itemId, delta) {
+            const input = document.getElementById(`slide_${itemId}`);
+            if (!input) return;
+
+            let currentValue = parseInt(input.value) || 0;
+            let newValue = currentValue + delta;
+            if (newValue < 0) newValue = 0;
+
+            changeSlideQty(itemId, newValue);
+        }
+
         function changeBlockQty(itemId, value) {
             value = parseInt(value) || 0;
             if (value < 0) value = 0;
@@ -919,6 +989,7 @@
                     <tr>
                         <td>${item.id}</td>
                         <td><strong>${item.barcode ? escapeHtml(item.barcode) : '<span class="text-muted">-</span>'}</strong></td>
+                        <td>${item.patient_id ? escapeHtml(item.patient_id) : '<span class="text-muted">-</span>'}</td>
                         <td>${item.quantity}</td>
                         <td>${escapeHtml(item.scanned_by_name || '-')}</td>
                         <td>${formatDate(scannedAt)}</td>

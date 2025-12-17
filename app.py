@@ -103,7 +103,8 @@ def index():
 def login():
     """ログイン画面（ユーザー選択）"""
     users = User.query.filter_by(is_active=True).order_by(User.name).all()
-    return render_template('login.html', users=users)
+    usb_status = USBChecker().get_status()
+    return render_template('login.html', users=users, usb_status=usb_status)
 
 
 @app.route('/login', methods=['POST'])
@@ -125,6 +126,16 @@ def do_login():
             return jsonify({'error': '無効なユーザーです'}), 400
         flash('無効なユーザーです', 'error')
         return redirect(url_for('login'))
+
+    # 管理者以外はUSB接続チェック
+    if not user.is_admin:
+        usb_checker = USBChecker()
+        if not usb_checker.is_usb_valid():
+            error_msg = 'USBメモリが接続されていません。USBメモリを接続してから再度ログインしてください。'
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'error': error_msg}), 403
+            flash(error_msg, 'error')
+            return redirect(url_for('login'))
 
     # パスワードチェック（パスワード設定済みの場合のみ）
     if user.has_password:
@@ -235,6 +246,7 @@ def scan():
     user = get_current_user()
 
     barcode = data.get('barcode', '').strip() or None
+    patient_id = data.get('patient_id', '').strip() or None
     quantity = int(data.get('quantity', 1))
     notes = data.get('notes', '').strip() or None
     returned = data.get('returned', False)
@@ -256,6 +268,7 @@ def scan():
     # 新規レコード作成
     item = ItemLog(
         barcode=barcode,
+        patient_id=patient_id,
         quantity=quantity,
         scanned_by_id=user.id,
         expected_return_date=expected_return_date,
@@ -338,6 +351,7 @@ def history():
         query = query.filter(
             db.or_(
                 ItemLog.barcode.contains(search),
+                ItemLog.patient_id.contains(search),
                 ItemLog.notes.contains(search)
             )
         )
@@ -557,6 +571,46 @@ def update_user(user_id):
     return jsonify({
         'success': True,
         'user': user.to_dict()
+    })
+
+
+@app.route('/users/<int:user_id>/delete', methods=['POST'])
+@login_required
+def delete_user(user_id):
+    """ユーザー削除（ソフトデリート）"""
+    # 管理者権限チェック
+    if not current_user.is_admin:
+        return jsonify({'error': '管理者権限が必要です'}), 403
+
+    # 削除対象ユーザー取得
+    user = User.query.get_or_404(user_id)
+
+    # 自分自身の削除を防止
+    if user.id == current_user.id:
+        return jsonify({'error': '自分自身は削除できません'}), 400
+
+    # 既に削除済みか確認
+    if not user.is_active:
+        return jsonify({'error': 'このユーザーは既に削除されています'}), 400
+
+    # 最後の管理者の削除を防止
+    if user.is_admin:
+        active_admin_count = User.query.filter_by(is_admin=True, is_active=True).count()
+        if active_admin_count <= 1:
+            return jsonify({'error': '最後の管理者ユーザーは削除できません'}), 400
+
+    old_value = user.to_dict()
+
+    # ソフトデリート: is_activeをFalseに設定
+    user.is_active = False
+    db.session.commit()
+
+    # 監査ログ
+    create_audit_log('DELETE', 'users', user.id, old_value=old_value, new_value=user.to_dict())
+
+    return jsonify({
+        'success': True,
+        'message': f'ユーザー「{user.name}」を削除しました'
     })
 
 
@@ -962,8 +1016,11 @@ if __name__ == '__main__':
 
     # アプリ起動
     print("\n🎀 バーコード管理アプリを起動しています...")
-    print(f"📍 アクセス: http://127.0.0.1:5000")
+    if Config.HOST == '0.0.0.0':
+        print(f"📍 アクセス: http://localhost:{Config.PORT} または http://<このPCのIPアドレス>:{Config.PORT}")
+    else:
+        print(f"📍 アクセス: http://{Config.HOST}:{Config.PORT}")
     print(f"💾 USB: {message}")
     print("\nCtrl+C で終了\n")
 
-    app.run(host='127.0.0.1', port=5000, debug=Config.DEBUG)
+    app.run(host=Config.HOST, port=Config.PORT, debug=Config.DEBUG)
