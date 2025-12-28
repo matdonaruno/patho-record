@@ -23,7 +23,7 @@ from flask import (
 from config import Config
 from models import db, User, ItemLog, AuditLog, AppSettings
 from logger import setup_logger, get_audit_logger
-from usb_check import check_usb_on_startup, USBChecker
+from nas_check import check_nas_on_startup, NASChecker
 from backup import BackupManager
 
 # Flask アプリ初期化
@@ -103,8 +103,8 @@ def index():
 def login():
     """ログイン画面（ユーザー選択）"""
     users = User.query.filter_by(is_active=True).order_by(User.name).all()
-    usb_status = USBChecker().get_status()
-    return render_template('login.html', users=users, usb_status=usb_status)
+    nas_status = NASChecker().get_status()
+    return render_template('login.html', users=users, nas_status=nas_status)
 
 
 @app.route('/login', methods=['POST'])
@@ -127,11 +127,11 @@ def do_login():
         flash('無効なユーザーです', 'error')
         return redirect(url_for('login'))
 
-    # 管理者以外はUSB接続チェック
+    # 管理者以外はNAS接続チェック
     if not user.is_admin:
-        usb_checker = USBChecker()
-        if not usb_checker.is_usb_valid():
-            error_msg = 'USBメモリが接続されていません。USBメモリを接続してから再度ログインしてください。'
+        nas_checker = NASChecker()
+        if not nas_checker.is_nas_valid():
+            error_msg = 'NASに接続できません。ネットワーク接続を確認してから再度ログインしてください。'
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return jsonify({'error': error_msg}), 403
             flash(error_msg, 'error')
@@ -207,7 +207,7 @@ def register_user():
 def main():
     """メイン画面（スキャン + 履歴）"""
     user = get_current_user()
-    usb_status = USBChecker().get_status()
+    nas_status = NASChecker().get_status()
     last_backup = backup_manager.get_last_backup_info()
 
     # 期限超過件数
@@ -226,7 +226,7 @@ def main():
     return render_template(
         'main.html',
         user=user,
-        usb_status=usb_status,
+        nas_status=nas_status,
         last_backup=last_backup,
         overdue_count=overdue_count,
         unreturned_count=unreturned_count,
@@ -694,12 +694,12 @@ def export_csv():
 @login_required
 def backup_status():
     """バックアップ状態"""
-    usb_status = USBChecker().get_status()
+    nas_status = NASChecker().get_status()
     last_backup = backup_manager.get_last_backup_info()
     backups = backup_manager.list_backups()
 
     return jsonify({
-        'usb': usb_status,
+        'nas': nas_status,
         'last_backup': last_backup,
         'backups': backups[:10]  # 最新10件
     })
@@ -748,7 +748,7 @@ def audit_logs():
 def settings():
     """設定画面"""
     user = get_current_user()
-    usb_status = USBChecker().get_status()
+    nas_status = NASChecker().get_status()
     users = User.query.order_by(User.name).all()
 
     # 返却期限日数を取得（デフォルトはConfig値）
@@ -757,7 +757,7 @@ def settings():
     return render_template(
         'settings.html',
         user=user,
-        usb_status=usb_status,
+        nas_status=nas_status,
         users=users,
         config=Config,
         return_days=int(return_days)
@@ -789,37 +789,40 @@ def settings_return_days():
     })
 
 
-@app.route('/settings/usb-device-id', methods=['GET', 'POST'])
+@app.route('/settings/nas-config', methods=['GET', 'POST'])
 @login_required
-def settings_usb_device_id():
-    """USBデバイスID設定の取得・更新"""
+def settings_nas_config():
+    """NAS設定の取得・更新"""
     if request.method == 'GET':
-        usb_device_id = AppSettings.get('usb_device_id', '')
-        return jsonify({'usb_device_id': usb_device_id})
+        return jsonify({
+            'nas_host': Config.NAS_HOST,
+            'nas_share': Config.NAS_SHARE,
+            'nas_mount_point': Config.NAS_MOUNT_POINT,
+            'nas_required': Config.NAS_REQUIRED
+        })
 
-    data = request.json
-    device_id = data.get('device_id', '').strip()
-
-    AppSettings.set('usb_device_id', device_id)
-
+    # 設定変更は環境変数または.envファイルで行うため、
+    # ここでは接続テストのみ実行可能
     user = get_current_user()
-    logger.info(f"USBデバイスIDを変更: {device_id or '(未設定)'} (ユーザー: {user.name})")
+    logger.info(f"NAS設定を確認 (ユーザー: {user.name})")
 
     return jsonify({
         'success': True,
-        'usb_device_id': device_id
+        'message': 'NAS設定は.envファイルで変更してください'
     })
 
 
-@app.route('/settings/usb-devices')
+@app.route('/settings/nas-status')
 @login_required
-def get_usb_devices():
-    """接続中のUSBデバイス一覧を取得"""
-    checker = USBChecker()
-    devices = checker.get_connected_usb_devices()
+def get_nas_status():
+    """NAS接続状態を取得"""
+    checker = NASChecker()
+    status = checker.get_status()
+    reachable = checker.check_nas_reachable()
 
     return jsonify({
-        'devices': devices
+        'status': status,
+        'reachable': reachable
     })
 
 
@@ -1043,11 +1046,11 @@ def check_and_run_daily_backup():
         logger.info(f"本日のバックアップは実行済み: {today}")
         return True, "本日のバックアップは実行済み"
 
-    # USBが接続されているか確認
-    usb_checker = USBChecker()
-    if not usb_checker.is_usb_valid():
-        logger.warning("USB未接続または不一致: バックアップをスキップ")
-        return False, "USB未接続または不一致"
+    # NASが接続されているか確認
+    nas_checker = NASChecker()
+    if not nas_checker.is_nas_valid():
+        logger.warning("NAS未接続または書き込み不可: バックアップをスキップ")
+        return False, "NAS未接続または書き込み不可"
 
     # バックアップ実行
     logger.info("初回起動バックアップ開始")
@@ -1079,13 +1082,13 @@ if __name__ == '__main__':
     if updated:
         print("✨ 最新版に更新されました")
 
-    # USB チェック
-    success, message, can_continue = check_usb_on_startup()
-    logger.info(f"USB チェック: {message}")
+    # NAS チェック
+    success, message, can_continue = check_nas_on_startup()
+    logger.info(f"NAS チェック: {message}")
 
     if not can_continue:
         print(f"\n⚠️  {message}")
-        print("USBメモリを接続してから再起動してください。")
+        print("NASに接続してから再起動してください。")
         exit(1)
 
     # データベース初期化
@@ -1108,7 +1111,7 @@ if __name__ == '__main__':
         print(f"📍 アクセス: http://localhost:{Config.PORT} または http://<このPCのIPアドレス>:{Config.PORT}")
     else:
         print(f"📍 アクセス: http://{Config.HOST}:{Config.PORT}")
-    print(f"💾 USB: {message}")
+    print(f"💾 NAS: {message}")
     print("\nCtrl+C で終了\n")
 
     app.run(host=Config.HOST, port=Config.PORT, debug=Config.DEBUG)

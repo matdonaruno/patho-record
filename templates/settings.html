@@ -99,13 +99,13 @@
             <div class="card-body">
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px;">
                     <div>
-                        <p class="form-label">USB接続状態</p>
+                        <p class="form-label">NAS接続状態</p>
                         <p>
-                            <span class="badge {{ 'badge-success' if usb_status.connected else 'badge-danger' }}">
-                                {{ '接続中' if usb_status.connected else '未接続' }}
+                            <span class="badge {{ 'badge-success' if nas_status.connected else 'badge-danger' }}">
+                                {{ '接続中' if nas_status.connected else '未接続' }}
                             </span>
-                            {% if usb_status.connected %}
-                            <br><small class="text-muted">{{ usb_status.mount_point }}</small>
+                            {% if nas_status.connected %}
+                            <br><small class="text-muted">{{ nas_status.host }} ({{ nas_status.mount_point }})</small>
                             {% endif %}
                         </p>
                     </div>
@@ -129,30 +129,29 @@
                     </div>
                 </div>
 
-                <!-- USBデバイスID設定 -->
+                <!-- NAS設定 -->
                 <div class="mt-4" style="border-top: 1px solid var(--border-color); padding-top: 16px;">
-                    <h4 style="margin-bottom: 12px;"><i class="ph ph-usb"></i> USBデバイスID設定</h4>
+                    <h4 style="margin-bottom: 12px;"><i class="ph ph-hard-drives"></i> NAS設定</h4>
                     <p class="text-muted" style="font-size: 0.85rem; margin-bottom: 12px;">
-                        バックアップ先USBのシリアル番号を設定すると、そのUSBが接続されている時のみバックアップが実行されます。
+                        バックアップ先NASの設定です。設定変更は.envファイルで行います。
                     </p>
 
-                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px;">
-                        <input type="text" class="form-input" id="usbDeviceIdInput"
-                               placeholder="USBデバイスID（シリアル番号）"
-                               style="flex: 1; max-width: 400px;">
-                        <button class="btn btn-secondary btn-sm" onclick="saveUsbDeviceId()">保存</button>
-                        <button class="btn btn-secondary btn-sm" onclick="clearUsbDeviceId()">クリア</button>
-                    </div>
-
                     <div style="background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 12px;">
-                        <p class="form-label" style="margin-bottom: 8px;">
-                            <i class="ph ph-list"></i> 接続中のUSBデバイス
-                            <button class="btn btn-secondary btn-sm" onclick="loadUsbDevices()" style="margin-left: 8px;">
-                                <i class="ph ph-arrow-clockwise"></i> 更新
-                            </button>
-                        </p>
-                        <div id="usbDeviceList">
-                            <span class="text-muted">読み込み中...</span>
+                        <div id="nasConfigInfo">
+                            <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px 16px;">
+                                <span class="text-muted">ホスト:</span>
+                                <span>{{ config.NAS_HOST }}</span>
+                                <span class="text-muted">共有名:</span>
+                                <span>{{ config.NAS_SHARE }}</span>
+                                <span class="text-muted">マウント先:</span>
+                                <span>{{ config.NAS_MOUNT_POINT }}</span>
+                            </div>
+                            <div style="margin-top: 12px;">
+                                <button class="btn btn-secondary btn-sm" onclick="checkNasStatus()">
+                                    <i class="ph ph-arrow-clockwise"></i> 接続確認
+                                </button>
+                                <span id="nasStatusResult" style="margin-left: 8px;"></span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -359,84 +358,29 @@
         document.addEventListener('DOMContentLoaded', () => {
             loadBackupList();
             loadAuditLogs();
-            loadUsbDeviceId();
-            loadUsbDevices();
             loadCurrentVersion();
         });
 
-        // USBデバイスID関連
-        function loadUsbDeviceId() {
-            fetch('/settings/usb-device-id')
+        // NAS接続確認
+        function checkNasStatus() {
+            const resultSpan = document.getElementById('nasStatusResult');
+            resultSpan.innerHTML = '<span class="text-muted">確認中...</span>';
+
+            fetch('/settings/nas-status')
                 .then(response => response.json())
                 .then(data => {
-                    document.getElementById('usbDeviceIdInput').value = data.usb_device_id || '';
-                })
-                .catch(error => {
-                    console.error('USBデバイスID読み込みエラー:', error);
-                });
-        }
-
-        function saveUsbDeviceId() {
-            const deviceId = document.getElementById('usbDeviceIdInput').value.trim();
-
-            fetch('/settings/usb-device-id', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest'
-                },
-                body: JSON.stringify({ device_id: deviceId })
-            })
-            .then(response => response.json())
-            .then(result => {
-                if (result.success) {
-                    showToast('USBデバイスIDを保存しました', 'success');
-                } else {
-                    showToast(result.error, 'error');
-                }
-            })
-            .catch(error => {
-                showToast('エラーが発生しました', 'error');
-            });
-        }
-
-        function clearUsbDeviceId() {
-            document.getElementById('usbDeviceIdInput').value = '';
-            saveUsbDeviceId();
-        }
-
-        function loadUsbDevices() {
-            const container = document.getElementById('usbDeviceList');
-            container.innerHTML = '<span class="text-muted">読み込み中...</span>';
-
-            fetch('/settings/usb-devices')
-                .then(response => response.json())
-                .then(data => {
-                    if (!data.devices || data.devices.length === 0) {
-                        container.innerHTML = '<span class="text-muted">USBデバイスが見つかりません</span>';
-                        return;
+                    if (data.reachable && data.status.connected) {
+                        resultSpan.innerHTML = '<span class="badge badge-success">接続OK</span>';
+                    } else if (data.reachable) {
+                        resultSpan.innerHTML = '<span class="badge badge-warning">ネットワーク到達可・マウント未完了</span>';
+                    } else {
+                        resultSpan.innerHTML = '<span class="badge badge-danger">接続不可</span>';
                     }
-
-                    container.innerHTML = data.devices.map(device => `
-                        <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px; background: var(--bg-color); border-radius: 4px; margin-bottom: 6px;">
-                            <div>
-                                <strong>${device.name || 'USBデバイス'}</strong>
-                                <br><small class="text-muted">Serial: ${device.serial}</small>
-                            </div>
-                            <button class="btn btn-primary btn-sm" onclick="copyToUsbInput('${device.serial}')">
-                                <i class="ph ph-copy"></i> 使用
-                            </button>
-                        </div>
-                    `).join('');
                 })
                 .catch(error => {
-                    container.innerHTML = '<span class="text-danger">読み込みに失敗しました</span>';
+                    resultSpan.innerHTML = '<span class="badge badge-danger">確認失敗</span>';
+                    console.error('NAS接続確認エラー:', error);
                 });
-        }
-
-        function copyToUsbInput(serial) {
-            document.getElementById('usbDeviceIdInput').value = serial;
-            showToast('シリアル番号をコピーしました。保存ボタンを押してください。', 'info');
         }
 
         // ユーザー追加モーダル
@@ -636,8 +580,8 @@
                                     <tr>
                                         <td>${b.filename}</td>
                                         <td>
-                                            <span class="badge ${b.location === 'usb' ? 'badge-success' : 'badge-info'}">
-                                                ${b.location === 'usb' ? 'USB' : 'ローカル'}
+                                            <span class="badge ${b.location === 'nas' ? 'badge-success' : 'badge-info'}">
+                                                ${b.location === 'nas' ? 'NAS' : 'ローカル'}
                                             </span>
                                         </td>
                                         <td>${new Date(b.modified).toLocaleString('ja-JP')}</td>

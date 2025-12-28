@@ -22,10 +22,19 @@ class Config:
     # セッション
     PERMANENT_SESSION_LIFETIME = timedelta(hours=8)
 
-    # USB バックアップ
+    # NAS バックアップ（SMB/CIFS）
+    NAS_HOST = os.getenv('NAS_HOST', '10.77.233.97')
+    NAS_SHARE = os.getenv('NAS_SHARE', 'share')
+    NAS_USERNAME = os.getenv('NAS_USERNAME', '')  # 空=匿名アクセス
+    NAS_PASSWORD = os.getenv('NAS_PASSWORD', '')
+    NAS_MOUNT_POINT = os.getenv('NAS_MOUNT_POINT', '/mnt/nas_backup')
+    NAS_REQUIRED = os.getenv('NAS_REQUIRED', 'True').lower() == 'true'
+    NAS_BACKUP_FOLDER = os.getenv('NAS_BACKUP_FOLDER', 'barcode_app_backups')
+
+    # USB バックアップ（レガシー、NAS優先）
     USB_UUID = os.getenv('USB_UUID', '')
     USB_MOUNT_POINT = os.getenv('USB_MOUNT_POINT', '/media/usb_backup')
-    USB_REQUIRED = os.getenv('USB_REQUIRED', 'True').lower() == 'true'
+    USB_REQUIRED = os.getenv('USB_REQUIRED', 'False').lower() == 'true'
 
     # バックアップ
     BACKUP_TIME = os.getenv('BACKUP_TIME', '02:00')

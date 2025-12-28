@@ -32,11 +32,12 @@
     --shadow-soft: 0 8px 20px rgba(149, 157, 165, 0.1), 0 2px 8px rgba(149, 157, 165, 0.05);
     --shadow-hover: 0 12px 28px rgba(149, 157, 165, 0.15), 0 4px 12px rgba(149, 157, 165, 0.08);
     --shadow-inset: inset 2px 2px 5px rgba(166, 171, 189, 0.1);
-    
+
     --border-radius: 24px;
     --border-radius-sm: 16px;
-    
-    --app-bg: #FDFBF7;
+
+    /* 薄青の背景 */
+    --app-bg: #EDF5FC;
 }
 
 /* ============================================================
@@ -50,10 +51,8 @@
 body {
     font-family: 'Nunito', 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif;
     background-color: var(--app-bg);
-    /* 淡い水玉パターン */
-    background-image: radial-gradient(var(--pastel-blue) 1.5px, transparent 1.5px), radial-gradient(var(--pastel-pink) 1.5px, transparent 1.5px);
-    background-size: 40px 40px;
-    background-position: 0 0, 20px 20px;
+    /* 薄青のシンプルな背景 */
+    background-image: linear-gradient(135deg, #EDF5FC 0%, #E3F0FA 50%, #EDF5FC 100%);
     min-height: 100vh;
     color: var(--text-main);
     margin: 0;

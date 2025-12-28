@@ -6,7 +6,7 @@ import shutil
 import sqlite3
 from datetime import datetime, timedelta
 from config import Config
-from usb_check import USBChecker
+from nas_check import NASChecker
 import logging
 
 logger = logging.getLogger(__name__)
@@ -16,7 +16,7 @@ class BackupManager:
     """バックアップ管理"""
 
     def __init__(self):
-        self.usb_checker = USBChecker()
+        self.nas_checker = NASChecker()
         self.backup_dir = Config.BACKUP_DIR
         self.retention_days = Config.BACKUP_RETENTION_DAYS
         self.db_path = os.path.join(Config.BASE_DIR, Config.DATABASE_PATH)
@@ -33,7 +33,7 @@ class BackupManager:
             os.makedirs(self.backup_dir)
 
         try:
-            # SQLite の安全なバックアップ（VACUUM INTO を使用）
+            # SQLite の安全なバックアップ（backup API を使用）
             backup_filename = f'{timestamp}_app.db'
             local_backup_path = os.path.join(self.backup_dir, backup_filename)
 
@@ -49,50 +49,46 @@ class BackupManager:
 
             logger.info(f"ローカルバックアップ作成: {local_backup_path}")
 
-            # USBへのコピー
-            usb_backup_path = None
-            if self.usb_checker.is_connected():
-                usb_backup_path = self._copy_to_usb(local_backup_path, backup_filename)
+            # NASへのコピー
+            nas_backup_path = None
+            if self.nas_checker.is_connected():
+                nas_backup_path = self._copy_to_nas(local_backup_path, backup_filename)
             else:
-                logger.warning("USB未接続: USBバックアップをスキップ")
+                logger.warning("NAS未接続: NASバックアップをスキップ")
 
             # 古いバックアップの削除
             self._cleanup_old_backups()
 
-            return True, "バックアップ完了", usb_backup_path or local_backup_path
+            return True, "バックアップ完了", nas_backup_path or local_backup_path
 
         except Exception as e:
             logger.error(f"バックアップ失敗: {str(e)}")
             return False, f"バックアップ失敗: {str(e)}", None
 
-    def _copy_to_usb(self, local_path, filename):
-        """USBにバックアップをコピー"""
+    def _copy_to_nas(self, local_path, filename):
+        """NASにバックアップをコピー"""
         try:
-            mount_point = self.usb_checker.get_mount_point()
-            if not mount_point:
+            nas_backup_dir = self.nas_checker.get_backup_dir()
+            if not nas_backup_dir:
                 return None
 
-            usb_backup_dir = os.path.join(mount_point, 'barcode_app_backups')
-            if not os.path.exists(usb_backup_dir):
-                os.makedirs(usb_backup_dir)
-
-            usb_backup_path = os.path.join(usb_backup_dir, filename)
-            shutil.copy2(local_path, usb_backup_path)
+            nas_backup_path = os.path.join(nas_backup_dir, filename)
+            shutil.copy2(local_path, nas_backup_path)
 
             # ログファイルもコピー
-            self._copy_logs_to_usb(usb_backup_dir)
+            self._copy_logs_to_nas(nas_backup_dir)
 
-            logger.info(f"USBバックアップ完了: {usb_backup_path}")
-            return usb_backup_path
+            logger.info(f"NASバックアップ完了: {nas_backup_path}")
+            return nas_backup_path
 
         except Exception as e:
-            logger.error(f"USBコピー失敗: {str(e)}")
+            logger.error(f"NASコピー失敗: {str(e)}")
             return None
 
-    def _copy_logs_to_usb(self, usb_backup_dir):
-        """ログファイルをUSBにコピー"""
+    def _copy_logs_to_nas(self, nas_backup_dir):
+        """ログファイルをNASにコピー"""
         try:
-            logs_dir = os.path.join(usb_backup_dir, 'logs')
+            logs_dir = os.path.join(nas_backup_dir, 'logs')
             if not os.path.exists(logs_dir):
                 os.makedirs(logs_dir)
 
@@ -108,14 +104,14 @@ class BackupManager:
             logger.error(f"ログコピー失敗: {str(e)}")
 
     def _cleanup_old_backups(self):
-        """古いバックアップを削除（ローカルのみ、USBは永久保存）"""
+        """古いバックアップを削除（ローカルのみ、NASは永久保存）"""
         cutoff_date = datetime.now() - timedelta(days=self.retention_days)
 
         # ローカルバックアップのクリーンアップ
         self._cleanup_directory(self.backup_dir, cutoff_date)
 
-        # USBバックアップは削除しない（アーカイブとして永久保存）
-        # 365日より古いデータはUSBから参照可能
+        # NASバックアップは削除しない（アーカイブとして永久保存）
+        # 365日より古いデータはNASから参照可能
 
     def _cleanup_directory(self, directory, cutoff_date):
         """指定ディレクトリ内の古いバックアップを削除"""
@@ -155,21 +151,19 @@ class BackupManager:
                         'modified': datetime.fromtimestamp(os.path.getmtime(filepath))
                     })
 
-        # USBバックアップを確認
-        if self.usb_checker.is_connected():
-            mount_point = self.usb_checker.get_mount_point()
-            if mount_point:
-                usb_backup_dir = os.path.join(mount_point, 'barcode_app_backups')
-                if os.path.exists(usb_backup_dir):
-                    for filename in os.listdir(usb_backup_dir):
-                        if filename.endswith('.db'):
-                            filepath = os.path.join(usb_backup_dir, filename)
-                            backups.append({
-                                'path': filepath,
-                                'filename': filename,
-                                'location': 'usb',
-                                'modified': datetime.fromtimestamp(os.path.getmtime(filepath))
-                            })
+        # NASバックアップを確認
+        if self.nas_checker.is_connected():
+            nas_backup_dir = self.nas_checker.get_backup_dir()
+            if nas_backup_dir and os.path.exists(nas_backup_dir):
+                for filename in os.listdir(nas_backup_dir):
+                    if filename.endswith('.db'):
+                        filepath = os.path.join(nas_backup_dir, filename)
+                        backups.append({
+                            'path': filepath,
+                            'filename': filename,
+                            'location': 'nas',
+                            'modified': datetime.fromtimestamp(os.path.getmtime(filepath))
+                        })
 
         if not backups:
             return None
@@ -196,21 +190,19 @@ class BackupManager:
                         'modified': datetime.fromtimestamp(os.path.getmtime(filepath)).isoformat()
                     })
 
-        # USB
-        if self.usb_checker.is_connected():
-            mount_point = self.usb_checker.get_mount_point()
-            if mount_point:
-                usb_backup_dir = os.path.join(mount_point, 'barcode_app_backups')
-                if os.path.exists(usb_backup_dir):
-                    for filename in os.listdir(usb_backup_dir):
-                        if filename.endswith('.db'):
-                            filepath = os.path.join(usb_backup_dir, filename)
-                            backups.append({
-                                'filename': filename,
-                                'location': 'usb',
-                                'size': os.path.getsize(filepath),
-                                'modified': datetime.fromtimestamp(os.path.getmtime(filepath)).isoformat()
-                            })
+        # NAS
+        if self.nas_checker.is_connected():
+            nas_backup_dir = self.nas_checker.get_backup_dir()
+            if nas_backup_dir and os.path.exists(nas_backup_dir):
+                for filename in os.listdir(nas_backup_dir):
+                    if filename.endswith('.db'):
+                        filepath = os.path.join(nas_backup_dir, filename)
+                        backups.append({
+                            'filename': filename,
+                            'location': 'nas',
+                            'size': os.path.getsize(filepath),
+                            'modified': datetime.fromtimestamp(os.path.getmtime(filepath)).isoformat()
+                        })
 
         backups.sort(key=lambda x: x['modified'], reverse=True)
         return backups
