@@ -25,6 +25,11 @@ from models import db, User, ItemLog, AuditLog, AppSettings
 from logger import setup_logger, get_audit_logger
 from nas_check import check_nas_on_startup, NASChecker
 from backup import BackupManager
+from validators import (
+    ValidationError, validate_barcode, validate_patient_id,
+    validate_notes, validate_quantity, validate_user_name,
+    validate_password, validate_return_days, sanitize_input
+)
 
 # Flask アプリ初期化
 app = Flask(__name__)
@@ -242,16 +247,19 @@ def main():
 @login_required
 def scan():
     """スキャン登録"""
-    data = request.json
+    data = sanitize_input(request.json or {})
     user = get_current_user()
 
-    barcode = data.get('barcode', '').strip() or None
-    patient_id = data.get('patient_id', '').strip() or None
-    quantity = int(data.get('quantity', 1))
-    notes = data.get('notes', '').strip() or None
-    returned = data.get('returned', False)
-    block_quantity = int(data.get('block_quantity', 0))
-    slide_quantity = int(data.get('slide_quantity', 0))
+    try:
+        barcode = validate_barcode(data.get('barcode'))
+        patient_id = validate_patient_id(data.get('patient_id'))
+        notes = validate_notes(data.get('notes'))
+        quantity = validate_quantity(data.get('quantity', 1), '個数', default=1)
+        block_quantity = validate_quantity(data.get('block_quantity', 0), 'ブロック数')
+        slide_quantity = validate_quantity(data.get('slide_quantity', 0), 'スライド数')
+        returned = bool(data.get('returned', False))
+    except ValidationError as e:
+        return jsonify({'error': e.message}), 400
 
     # バーコードまたはメモのいずれかが必要
     if not barcode and not notes:
@@ -397,41 +405,44 @@ def get_item(item_id):
 def update_item(item_id):
     """履歴更新"""
     item = ItemLog.query.get_or_404(item_id)
-    data = request.json
+    data = sanitize_input(request.json or {})
 
     # 変更前の値を保存
     old_value = item.to_dict()
     now = datetime.utcnow()
 
-    # 更新可能なフィールド
-    if 'quantity' in data:
-        item.quantity = int(data['quantity'])
-    if 'returned' in data:
-        new_returned = bool(data['returned'])
-        # 結果返却が初めてチェックされた時にタイムスタンプを記録
-        if new_returned and not item.returned:
-            item.returned_at = now
-        elif not new_returned:
-            item.returned_at = None
-        item.returned = new_returned
-    if 'block_quantity' in data:
-        new_block_quantity = int(data['block_quantity'])
-        # ブロック返却が初めて入力された時にタイムスタンプを記録
-        if new_block_quantity > 0 and item.block_quantity == 0:
-            item.block_returned_at = now
-        elif new_block_quantity == 0:
-            item.block_returned_at = None
-        item.block_quantity = new_block_quantity
-    if 'slide_quantity' in data:
-        new_slide_quantity = int(data['slide_quantity'])
-        # スライド返却が初めて入力された時にタイムスタンプを記録
-        if new_slide_quantity > 0 and item.slide_quantity == 0:
-            item.slide_returned_at = now
-        elif new_slide_quantity == 0:
-            item.slide_returned_at = None
-        item.slide_quantity = new_slide_quantity
-    if 'notes' in data:
-        item.notes = data['notes'].strip() or None
+    try:
+        # 更新可能なフィールド
+        if 'quantity' in data:
+            item.quantity = validate_quantity(data['quantity'], '個数', default=1)
+        if 'returned' in data:
+            new_returned = bool(data['returned'])
+            # 結果返却が初めてチェックされた時にタイムスタンプを記録
+            if new_returned and not item.returned:
+                item.returned_at = now
+            elif not new_returned:
+                item.returned_at = None
+            item.returned = new_returned
+        if 'block_quantity' in data:
+            new_block_quantity = validate_quantity(data['block_quantity'], 'ブロック数')
+            # ブロック返却が初めて入力された時にタイムスタンプを記録
+            if new_block_quantity > 0 and item.block_quantity == 0:
+                item.block_returned_at = now
+            elif new_block_quantity == 0:
+                item.block_returned_at = None
+            item.block_quantity = new_block_quantity
+        if 'slide_quantity' in data:
+            new_slide_quantity = validate_quantity(data['slide_quantity'], 'スライド数')
+            # スライド返却が初めて入力された時にタイムスタンプを記録
+            if new_slide_quantity > 0 and item.slide_quantity == 0:
+                item.slide_returned_at = now
+            elif new_slide_quantity == 0:
+                item.slide_returned_at = None
+            item.slide_quantity = new_slide_quantity
+        if 'notes' in data:
+            item.notes = validate_notes(data['notes'])
+    except ValidationError as e:
+        return jsonify({'error': e.message}), 400
     if 'expected_return_date' in data:
         if data['expected_return_date']:
             item.expected_return_date = datetime.fromisoformat(data['expected_return_date'])
@@ -500,13 +511,15 @@ def list_users():
 @login_required
 def create_user():
     """ユーザー作成"""
-    data = request.json
-    name = data.get('name', '').strip()
-    password = data.get('password', '').strip()
-    is_admin = data.get('is_admin', False)
+    data = sanitize_input(request.json or {})
 
-    if not name:
-        return jsonify({'error': '名前を入力してください'}), 400
+    try:
+        name = validate_user_name(data.get('name'), required=True)
+        password = validate_password(data.get('password'))
+    except ValidationError as e:
+        return jsonify({'error': e.message}), 400
+
+    is_admin = bool(data.get('is_admin', False))
 
     # 重複チェック
     existing = User.query.filter_by(name=name).first()
@@ -536,32 +549,34 @@ def create_user():
 def update_user(user_id):
     """ユーザー更新"""
     user = User.query.get_or_404(user_id)
-    data = request.json
+    data = sanitize_input(request.json or {})
 
     old_value = user.to_dict()
 
-    if 'name' in data:
-        name = data['name'].strip()
-        if name:
+    try:
+        if 'name' in data:
+            name = validate_user_name(data.get('name'), required=True)
             # 重複チェック
             existing = User.query.filter(User.name == name, User.id != user_id).first()
             if existing:
                 return jsonify({'error': 'この名前は既に使用されています'}), 400
             user.name = name
 
-    if 'is_active' in data:
-        user.is_active = bool(data['is_active'])
+        if 'is_active' in data:
+            user.is_active = bool(data['is_active'])
 
-    if 'is_admin' in data:
-        user.is_admin = bool(data['is_admin'])
+        if 'is_admin' in data:
+            user.is_admin = bool(data['is_admin'])
 
-    # パスワード変更
-    if 'password' in data:
-        password = data['password'].strip() if data['password'] else ''
-        if password:
-            user.set_password(password)
-        elif data.get('clear_password'):
-            user.password_hash = None  # パスワードをクリア
+        # パスワード変更
+        if 'password' in data:
+            password = validate_password(data.get('password'))
+            if password:
+                user.set_password(password)
+            elif data.get('clear_password'):
+                user.password_hash = None  # パスワードをクリア
+    except ValidationError as e:
+        return jsonify({'error': e.message}), 400
 
     db.session.commit()
 
@@ -772,11 +787,12 @@ def settings_return_days():
         return_days = AppSettings.get('return_days', str(Config.DEFAULT_RETURN_DAYS))
         return jsonify({'return_days': int(return_days)})
 
-    data = request.json
-    days = data.get('days')
+    data = sanitize_input(request.json or {})
 
-    if days is None or not isinstance(days, int) or days < 1:
-        return jsonify({'error': '有効な日数を指定してください'}), 400
+    try:
+        days = validate_return_days(data.get('days'))
+    except ValidationError as e:
+        return jsonify({'error': e.message}), 400
 
     AppSettings.set('return_days', str(days))
 
