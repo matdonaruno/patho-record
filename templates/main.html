@@ -28,8 +28,8 @@
                     未返却 {{ unreturned_count }}件
                 </span>
                 {% endif %}
-                <span class="badge {{ 'badge-success' if nas_status.connected else 'badge-danger' }}">
-                    NAS: {{ '接続中' if nas_status.connected else '未接続' }}
+                <span class="badge {{ 'badge-success' if storage_status.connected else 'badge-danger' }}">
+                    {{ 'USB' if storage_status.type == 'usb' else 'NAS' }}: {{ '接続中' if storage_status.connected else '未接続' }}
                 </span>
             </div>
             <span class="user-badge">{{ user.name }}</span>
@@ -266,9 +266,13 @@
     <!-- フッター -->
     <footer class="footer">
         <div class="footer-item">
-            <span>NAS:</span>
-            <span class="badge {{ 'badge-success' if nas_status.connected else 'badge-danger' }}">
-                {{ nas_status.host if nas_status.connected else '未接続' }}
+            <span>{{ 'USB' if storage_status.type == 'usb' else 'NAS' }}:</span>
+            <span class="badge {{ 'badge-success' if storage_status.connected else 'badge-danger' }}">
+                {% if storage_status.connected %}
+                    {{ storage_status.mount_point if storage_status.type == 'usb' else storage_status.host }}
+                {% else %}
+                    未接続
+                {% endif %}
             </span>
         </div>
         <div class="footer-item">

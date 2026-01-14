@@ -23,8 +23,9 @@ from flask import (
 from config import Config
 from models import db, User, ItemLog, AuditLog, AppSettings
 from logger import setup_logger, get_audit_logger
-from nas_check import check_nas_on_startup, NASChecker
-from backup import BackupManager
+from nas_check import NASChecker
+from usb_check import USBChecker
+from backup import BackupManager, check_storage_on_startup, get_backup_type
 from validators import (
     ValidationError, validate_barcode, validate_patient_id,
     validate_notes, validate_quantity, validate_user_name,
@@ -104,12 +105,25 @@ def index():
     return redirect(url_for('login'))
 
 
+def get_storage_status():
+    """現在のバックアップタイプに応じたストレージ状態を取得"""
+    backup_type = get_backup_type()
+    if backup_type == 'usb':
+        status = USBChecker().get_status()
+        status['type'] = 'usb'
+        return status
+    else:
+        status = NASChecker().get_status()
+        status['type'] = 'nas'
+        return status
+
+
 @app.route('/login')
 def login():
     """ログイン画面（ユーザー選択）"""
     users = User.query.filter_by(is_active=True).order_by(User.name).all()
-    nas_status = NASChecker().get_status()
-    return render_template('login.html', users=users, nas_status=nas_status)
+    storage_status = get_storage_status()
+    return render_template('login.html', users=users, storage_status=storage_status)
 
 
 @app.route('/login', methods=['POST'])
@@ -132,11 +146,18 @@ def do_login():
         flash('無効なユーザーです', 'error')
         return redirect(url_for('login'))
 
-    # 管理者以外はNAS接続チェック
+    # 管理者以外はストレージ接続チェック
     if not user.is_admin:
-        nas_checker = NASChecker()
-        if not nas_checker.is_nas_valid():
+        backup_type = get_backup_type()
+        storage_valid = False
+        if backup_type == 'usb':
+            storage_valid = USBChecker().is_usb_valid()
+            error_msg = 'USBに接続できません。USBメモリを接続してから再度ログインしてください。'
+        else:
+            storage_valid = NASChecker().is_nas_valid()
             error_msg = 'NASに接続できません。ネットワーク接続を確認してから再度ログインしてください。'
+
+        if not storage_valid:
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return jsonify({'error': error_msg}), 403
             flash(error_msg, 'error')
@@ -212,7 +233,7 @@ def register_user():
 def main():
     """メイン画面（スキャン + 履歴）"""
     user = get_current_user()
-    nas_status = NASChecker().get_status()
+    storage_status = get_storage_status()
     last_backup = backup_manager.get_last_backup_info()
 
     # 期限超過件数
@@ -231,7 +252,7 @@ def main():
     return render_template(
         'main.html',
         user=user,
-        nas_status=nas_status,
+        storage_status=storage_status,
         last_backup=last_backup,
         overdue_count=overdue_count,
         unreturned_count=unreturned_count,
@@ -709,12 +730,12 @@ def export_csv():
 @login_required
 def backup_status():
     """バックアップ状態"""
-    nas_status = NASChecker().get_status()
+    storage_status = get_storage_status()
     last_backup = backup_manager.get_last_backup_info()
     backups = backup_manager.list_backups()
 
     return jsonify({
-        'nas': nas_status,
+        'storage': storage_status,
         'last_backup': last_backup,
         'backups': backups[:10]  # 最新10件
     })
@@ -763,19 +784,22 @@ def audit_logs():
 def settings():
     """設定画面"""
     user = get_current_user()
-    nas_status = NASChecker().get_status()
+    storage_status = get_storage_status()
     users = User.query.order_by(User.name).all()
 
     # 返却期限日数を取得（デフォルトはConfig値）
     return_days = AppSettings.get('return_days', str(Config.DEFAULT_RETURN_DAYS))
+    # 現在のバックアップタイプを取得
+    backup_type = get_backup_type()
 
     return render_template(
         'settings.html',
         user=user,
-        nas_status=nas_status,
+        storage_status=storage_status,
         users=users,
         config=Config,
-        return_days=int(return_days)
+        return_days=int(return_days),
+        backup_type=backup_type
     )
 
 
@@ -828,10 +852,38 @@ def settings_nas_config():
     })
 
 
+@app.route('/settings/storage-status')
+@login_required
+def get_storage_status_api():
+    """ストレージ接続状態を取得"""
+    backup_type = get_backup_type()
+
+    if backup_type == 'usb':
+        checker = USBChecker()
+        status = checker.get_status()
+        status['type'] = 'usb'
+        connected = checker.is_connected()
+        return jsonify({
+            'status': status,
+            'connected': connected,
+            'backup_type': 'usb'
+        })
+    else:
+        checker = NASChecker()
+        status = checker.get_status()
+        status['type'] = 'nas'
+        reachable = checker.check_nas_reachable()
+        return jsonify({
+            'status': status,
+            'reachable': reachable,
+            'backup_type': 'nas'
+        })
+
+
 @app.route('/settings/nas-status')
 @login_required
 def get_nas_status():
-    """NAS接続状態を取得"""
+    """NAS接続状態を取得（後方互換性のため維持）"""
     checker = NASChecker()
     status = checker.get_status()
     reachable = checker.check_nas_reachable()
@@ -840,6 +892,310 @@ def get_nas_status():
         'status': status,
         'reachable': reachable
     })
+
+
+@app.route('/settings/backup-type', methods=['GET', 'POST'])
+@login_required
+def settings_backup_type():
+    """バックアップタイプの取得・更新"""
+    if request.method == 'GET':
+        backup_type = get_backup_type()
+        return jsonify({'backup_type': backup_type})
+
+    data = sanitize_input(request.json or {})
+    new_type = data.get('backup_type', '').lower()
+
+    if new_type not in ('usb', 'nas'):
+        return jsonify({'error': 'バックアップタイプは usb または nas を指定してください'}), 400
+
+    AppSettings.set('backup_type', new_type)
+
+    user = get_current_user()
+    logger.info(f"バックアップタイプを変更: {new_type} (ユーザー: {user.name})")
+
+    return jsonify({
+        'success': True,
+        'backup_type': new_type
+    })
+
+
+@app.route('/settings/storage-config', methods=['GET', 'POST'])
+@login_required
+def settings_storage_config():
+    """ストレージ設定の取得・更新（管理者のみ）"""
+    user = get_current_user()
+    if not user.is_admin:
+        return jsonify({'error': '管理者権限が必要です'}), 403
+
+    if request.method == 'GET':
+        # 現在の設定を取得
+        return jsonify({
+            'nas': {
+                'host': AppSettings.get('nas_host', Config.NAS_HOST or ''),
+                'share': AppSettings.get('nas_share', Config.NAS_SHARE or ''),
+                'username': AppSettings.get('nas_username', Config.NAS_USERNAME or ''),
+                'password': '***' if AppSettings.get('nas_password', Config.NAS_PASSWORD) else '',
+                'mount_point': AppSettings.get('nas_mount_point', Config.NAS_MOUNT_POINT or '/mnt/nas_backup'),
+                'backup_folder': AppSettings.get('nas_backup_folder', Config.NAS_BACKUP_FOLDER or 'barcode_app_backups'),
+            },
+            'usb': {
+                'uuid': AppSettings.get('usb_uuid', Config.USB_UUID or ''),
+                'mount_point': AppSettings.get('usb_mount_point', Config.USB_MOUNT_POINT or '/media/usb_backup'),
+                'backup_folder': AppSettings.get('usb_backup_folder', Config.USB_BACKUP_FOLDER or 'barcode_app_backups'),
+            }
+        })
+
+    # POST: 設定を保存
+    data = sanitize_input(request.json or {})
+    storage_type = data.get('type')
+
+    if storage_type == 'nas':
+        # NAS設定を保存
+        if 'host' in data:
+            AppSettings.set('nas_host', data['host'])
+        if 'share' in data:
+            AppSettings.set('nas_share', data['share'])
+        if 'username' in data:
+            AppSettings.set('nas_username', data['username'])
+        if 'password' in data and data['password'] != '***':
+            AppSettings.set('nas_password', data['password'])
+        if 'mount_point' in data:
+            AppSettings.set('nas_mount_point', data['mount_point'])
+        if 'backup_folder' in data:
+            AppSettings.set('nas_backup_folder', data['backup_folder'])
+
+        logger.info(f"NAS設定を更新 (ユーザー: {user.name})")
+
+    elif storage_type == 'usb':
+        # USB設定を保存
+        if 'uuid' in data:
+            AppSettings.set('usb_uuid', data['uuid'])
+        if 'mount_point' in data:
+            AppSettings.set('usb_mount_point', data['mount_point'])
+        if 'backup_folder' in data:
+            AppSettings.set('usb_backup_folder', data['backup_folder'])
+
+        logger.info(f"USB設定を更新 (ユーザー: {user.name})")
+
+    else:
+        return jsonify({'error': 'typeは nas または usb を指定してください'}), 400
+
+    return jsonify({'success': True})
+
+
+# ============================================================
+# バックアップ検証・診断機能
+# ============================================================
+
+@app.route('/settings/backup-diagnostics')
+@login_required
+def backup_diagnostics():
+    """バックアップシステムの完全診断を実行"""
+    user = get_current_user()
+    if not user.is_admin:
+        return jsonify({'error': '管理者権限が必要です'}), 403
+
+    backup_type = get_backup_type()
+
+    if backup_type == 'nas':
+        checker = NASChecker()
+        results = checker.run_full_diagnostics()
+    else:
+        # USB用の診断
+        checker = USBChecker()
+        results = {
+            'timestamp': datetime.now().isoformat(),
+            'tests': [
+                {
+                    'name': 'USB接続確認',
+                    'status': 'ok' if checker.is_connected() else 'error',
+                    'detail': checker.get_mount_point() or 'USB未接続'
+                },
+                {
+                    'name': '書き込みテスト',
+                    'status': 'ok' if checker.is_usb_valid() else 'error',
+                    'detail': '書き込み可能' if checker.is_usb_valid() else '書き込み不可'
+                }
+            ],
+            'overall': 'ok' if checker.is_usb_valid() else 'error'
+        }
+
+    results['backup_type'] = backup_type
+    return jsonify(results)
+
+
+@app.route('/settings/backup-verify', methods=['POST'])
+@login_required
+def backup_verify():
+    """最新バックアップの整合性を検証"""
+    user = get_current_user()
+    if not user.is_admin:
+        return jsonify({'error': '管理者権限が必要です'}), 403
+
+    # 最新のローカルバックアップを取得
+    local_backups = []
+    if os.path.exists(Config.BACKUP_DIR):
+        for f in os.listdir(Config.BACKUP_DIR):
+            if f.endswith('.db'):
+                local_backups.append(os.path.join(Config.BACKUP_DIR, f))
+    local_backups.sort(reverse=True)
+
+    if not local_backups:
+        return jsonify({'success': False, 'error': 'ローカルバックアップが見つかりません'})
+
+    latest_local = local_backups[0]
+    filename = os.path.basename(latest_local)
+
+    # バックアップタイプに応じてリモートパスを取得
+    backup_type = get_backup_type()
+    if backup_type == 'nas':
+        checker = NASChecker()
+        backup_dir = checker.get_backup_dir()
+    else:
+        checker = USBChecker()
+        mount_point = checker.get_mount_point()
+        backup_dir = os.path.join(mount_point, Config.USB_BACKUP_FOLDER) if mount_point else None
+
+    if not backup_dir:
+        return jsonify({'success': False, 'error': 'リモートストレージに接続できません'})
+
+    remote_path = os.path.join(backup_dir, filename)
+
+    # 検証実行
+    if backup_type == 'nas':
+        result = checker.verify_backup(latest_local, remote_path)
+    else:
+        # USB用の簡易検証
+        import hashlib
+        try:
+            if not os.path.exists(remote_path):
+                result = {'success': False, 'error': 'リモートファイルが存在しません'}
+            else:
+                local_size = os.path.getsize(latest_local)
+                remote_size = os.path.getsize(remote_path)
+                if local_size == remote_size:
+                    result = {'success': True, 'message': 'バックアップ検証成功', 'local_size': local_size, 'remote_size': remote_size}
+                else:
+                    result = {'success': False, 'error': f'サイズ不一致: ローカル={local_size}, リモート={remote_size}'}
+        except Exception as e:
+            result = {'success': False, 'error': str(e)}
+
+    result['filename'] = filename
+    result['backup_type'] = backup_type
+    return jsonify(result)
+
+
+@app.route('/settings/insert-demo-data', methods=['POST'])
+@login_required
+def insert_demo_data():
+    """デモデータを挿入してバックアップをテスト"""
+    user = get_current_user()
+    if not user.is_admin:
+        return jsonify({'error': '管理者権限が必要です'}), 403
+
+    try:
+        # デモデータを挿入
+        demo_items = []
+        timestamp = datetime.now().strftime('%H%M%S')
+
+        for i in range(3):
+            barcode = f"DEMO-{timestamp}-{i+1:03d}"
+            item = ItemLog(
+                barcode=barcode,
+                patient_id=f"P{timestamp}{i}",
+                notes=f"バックアップテスト用デモデータ #{i+1}",
+                user_id=user.id,
+                quantity=1,
+                expected_return_date=datetime.utcnow() + timedelta(days=14)
+            )
+            db.session.add(item)
+            demo_items.append(barcode)
+
+        db.session.commit()
+        logger.info(f"デモデータ挿入: {len(demo_items)}件 (ユーザー: {user.name})")
+
+        # バックアップを実行
+        success, message, path = backup_manager.create_backup()
+
+        if success:
+            return jsonify({
+                'success': True,
+                'demo_items': demo_items,
+                'backup_path': path,
+                'message': f'{len(demo_items)}件のデモデータを挿入し、バックアップを作成しました'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'demo_items': demo_items,
+                'error': f'デモデータは挿入しましたが、バックアップに失敗しました: {message}'
+            })
+
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"デモデータ挿入失敗: {e}")
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/settings/cleanup-demo-data', methods=['POST'])
+@login_required
+def cleanup_demo_data():
+    """デモデータを削除"""
+    user = get_current_user()
+    if not user.is_admin:
+        return jsonify({'error': '管理者権限が必要です'}), 403
+
+    try:
+        # DEMO-で始まるバーコードを持つレコードを削除
+        demo_items = ItemLog.query.filter(ItemLog.barcode.like('DEMO-%')).all()
+        count = len(demo_items)
+
+        for item in demo_items:
+            db.session.delete(item)
+
+        db.session.commit()
+        logger.info(f"デモデータ削除: {count}件 (ユーザー: {user.name})")
+
+        return jsonify({
+            'success': True,
+            'deleted_count': count,
+            'message': f'{count}件のデモデータを削除しました'
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"デモデータ削除失敗: {e}")
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/settings/fstab-entry')
+@login_required
+def get_fstab_entry():
+    """fstabエントリを生成（NAS直結運用用）"""
+    user = get_current_user()
+    if not user.is_admin:
+        return jsonify({'error': '管理者権限が必要です'}), 403
+
+    from nas_check import generate_fstab_entry
+    entry = generate_fstab_entry()
+
+    if entry:
+        return jsonify({
+            'success': True,
+            'entry': entry,
+            'instructions': [
+                '1. sudo nano /etc/fstab を実行',
+                '2. 以下の行を追加:',
+                entry,
+                '3. 保存して終了',
+                '4. sudo mount -a でテスト'
+            ]
+        })
+    else:
+        return jsonify({
+            'success': False,
+            'error': 'NAS設定がありません'
+        })
 
 
 # ============================================================
@@ -1062,11 +1418,19 @@ def check_and_run_daily_backup():
         logger.info(f"本日のバックアップは実行済み: {today}")
         return True, "本日のバックアップは実行済み"
 
-    # NASが接続されているか確認
-    nas_checker = NASChecker()
-    if not nas_checker.is_nas_valid():
-        logger.warning("NAS未接続または書き込み不可: バックアップをスキップ")
-        return False, "NAS未接続または書き込み不可"
+    # ストレージが接続されているか確認
+    backup_type = get_backup_type()
+    storage_valid = False
+    if backup_type == 'usb':
+        storage_valid = USBChecker().is_usb_valid()
+        storage_name = 'USB'
+    else:
+        storage_valid = NASChecker().is_nas_valid()
+        storage_name = 'NAS'
+
+    if not storage_valid:
+        logger.warning(f"{storage_name}未接続または書き込み不可: バックアップをスキップ")
+        return False, f"{storage_name}未接続または書き込み不可"
 
     # バックアップ実行
     logger.info("初回起動バックアップ開始")
@@ -1098,13 +1462,15 @@ if __name__ == '__main__':
     if updated:
         print("✨ 最新版に更新されました")
 
-    # NAS チェック
-    success, message, can_continue = check_nas_on_startup()
-    logger.info(f"NAS チェック: {message}")
+    # ストレージチェック
+    success, message, can_continue = check_storage_on_startup()
+    backup_type = get_backup_type()
+    storage_name = 'USB' if backup_type == 'usb' else 'NAS'
+    logger.info(f"{storage_name} チェック: {message}")
 
     if not can_continue:
         print(f"\n⚠️  {message}")
-        print("NASに接続してから再起動してください。")
+        print(f"{storage_name}に接続してから再起動してください。")
         exit(1)
 
     # データベース初期化
@@ -1127,7 +1493,7 @@ if __name__ == '__main__':
         print(f"📍 アクセス: http://localhost:{Config.PORT} または http://<このPCのIPアドレス>:{Config.PORT}")
     else:
         print(f"📍 アクセス: http://{Config.HOST}:{Config.PORT}")
-    print(f"💾 NAS: {message}")
+    print(f"💾 {storage_name}: {message}")
     print("\nCtrl+C で終了\n")
 
     app.run(host=Config.HOST, port=Config.PORT, debug=Config.DEBUG)

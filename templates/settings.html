@@ -97,15 +97,35 @@
                 <h2 class="card-title"><i class="ph ph-floppy-disk"></i> バックアップ</h2>
             </div>
             <div class="card-body">
+                <!-- バックアップタイプ選択 -->
+                <div class="mb-4" style="border-bottom: 1px solid var(--border-color); padding-bottom: 16px;">
+                    <h4 style="margin-bottom: 12px;"><i class="ph ph-swap"></i> バックアップ先</h4>
+                    <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                        <label class="toggle-item" style="flex: 1; min-width: 150px; padding: 12px; border: 2px solid var(--border-color); border-radius: 8px; cursor: pointer; transition: all 0.2s;" id="backupTypeUsb">
+                            <input type="radio" name="backupType" value="usb" {{ 'checked' if backup_type == 'usb' else '' }} onchange="changeBackupType('usb')">
+                            <i class="ph ph-usb"></i> USBメモリ
+                        </label>
+                        <label class="toggle-item" style="flex: 1; min-width: 150px; padding: 12px; border: 2px solid var(--border-color); border-radius: 8px; cursor: pointer; transition: all 0.2s;" id="backupTypeNas">
+                            <input type="radio" name="backupType" value="nas" {{ 'checked' if backup_type == 'nas' else '' }} onchange="changeBackupType('nas')">
+                            <i class="ph ph-hard-drives"></i> NAS
+                        </label>
+                    </div>
+                </div>
+
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px;">
                     <div>
-                        <p class="form-label">NAS接続状態</p>
+                        <p class="form-label">ストレージ接続状態</p>
                         <p>
-                            <span class="badge {{ 'badge-success' if nas_status.connected else 'badge-danger' }}">
-                                {{ '接続中' if nas_status.connected else '未接続' }}
+                            <span class="badge {{ 'badge-success' if storage_status.connected else 'badge-danger' }}">
+                                {{ '接続中' if storage_status.connected else '未接続' }}
                             </span>
-                            {% if nas_status.connected %}
-                            <br><small class="text-muted">{{ nas_status.host }} ({{ nas_status.mount_point }})</small>
+                            <span class="badge badge-info" style="margin-left: 4px;">
+                                {{ 'USB' if storage_status.type == 'usb' else 'NAS' }}
+                            </span>
+                            {% if storage_status.connected and storage_status.type == 'nas' %}
+                            <br><small class="text-muted">{{ storage_status.host }} ({{ storage_status.mount_point }})</small>
+                            {% elif storage_status.connected and storage_status.type == 'usb' %}
+                            <br><small class="text-muted">{{ storage_status.mount_point }}</small>
                             {% endif %}
                         </p>
                     </div>
@@ -129,31 +149,106 @@
                     </div>
                 </div>
 
-                <!-- NAS設定 -->
-                <div class="mt-4" style="border-top: 1px solid var(--border-color); padding-top: 16px;">
+                <!-- NAS設定（NAS選択時のみ表示） -->
+                <div class="mt-4" style="border-top: 1px solid var(--border-color); padding-top: 16px;" id="nasSettingsSection" {{ 'style=display:none;' if backup_type == 'usb' else '' }}>
                     <h4 style="margin-bottom: 12px;"><i class="ph ph-hard-drives"></i> NAS設定</h4>
+                    {% if user.is_admin %}
                     <p class="text-muted" style="font-size: 0.85rem; margin-bottom: 12px;">
-                        バックアップ先NASの設定です。設定変更は.envファイルで行います。
+                        Buffalo NAS直結運用の場合: ホストIP 192.168.0.100、共有名 share を設定してください。
                     </p>
-
-                    <div style="background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 12px;">
-                        <div id="nasConfigInfo">
-                            <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px 16px;">
-                                <span class="text-muted">ホスト:</span>
-                                <span>{{ config.NAS_HOST }}</span>
-                                <span class="text-muted">共有名:</span>
-                                <span>{{ config.NAS_SHARE }}</span>
-                                <span class="text-muted">マウント先:</span>
-                                <span>{{ config.NAS_MOUNT_POINT }}</span>
+                    <div style="background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px;">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                            <div class="form-group">
+                                <label class="form-label">ホスト (IPアドレス)</label>
+                                <input type="text" class="form-input" id="nasHost" placeholder="例: 192.168.0.100">
                             </div>
-                            <div style="margin-top: 12px;">
-                                <button class="btn btn-secondary btn-sm" onclick="checkNasStatus()">
-                                    <i class="ph ph-arrow-clockwise"></i> 接続確認
-                                </button>
-                                <span id="nasStatusResult" style="margin-left: 8px;"></span>
+                            <div class="form-group">
+                                <label class="form-label">共有名</label>
+                                <input type="text" class="form-input" id="nasShare" placeholder="例: share">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">ユーザー名 (空欄=匿名)</label>
+                                <input type="text" class="form-input" id="nasUsername" placeholder="匿名の場合は空欄">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">パスワード</label>
+                                <input type="password" class="form-input" id="nasPassword" placeholder="匿名の場合は空欄">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">マウントポイント</label>
+                                <input type="text" class="form-input" id="nasMountPoint" placeholder="例: /mnt/nas_backup">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">バックアップフォルダ</label>
+                                <input type="text" class="form-input" id="nasBackupFolder" placeholder="例: barcode_app_backups">
                             </div>
                         </div>
+                        <div style="margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap;">
+                            <button class="btn btn-primary" onclick="saveNasSettings()">
+                                <i class="ph ph-floppy-disk"></i> NAS設定を保存
+                            </button>
+                            <button class="btn btn-secondary" onclick="checkStorageStatus()">
+                                <i class="ph ph-arrow-clockwise"></i> 接続テスト
+                            </button>
+                            <span id="storageStatusResult" style="margin-left: 8px; line-height: 36px;"></span>
+                        </div>
                     </div>
+                    {% else %}
+                    <div style="background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 12px;">
+                        <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px 16px;">
+                            <span class="text-muted">ホスト:</span>
+                            <span id="nasHostDisplay">-</span>
+                            <span class="text-muted">共有名:</span>
+                            <span id="nasShareDisplay">-</span>
+                            <span class="text-muted">マウント先:</span>
+                            <span id="nasMountPointDisplay">-</span>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <!-- USB設定（USB選択時のみ表示） -->
+                <div class="mt-4" style="border-top: 1px solid var(--border-color); padding-top: 16px;" id="usbSettingsSection" {{ '' if backup_type == 'usb' else 'style=display:none;' }}>
+                    <h4 style="margin-bottom: 12px;"><i class="ph ph-usb"></i> USB設定</h4>
+                    {% if user.is_admin %}
+                    <p class="text-muted" style="font-size: 0.85rem; margin-bottom: 12px;">
+                        バックアップ先USBメモリの設定です。UUIDはlsblkコマンドで確認できます。
+                    </p>
+                    <div style="background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px;">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                            <div class="form-group">
+                                <label class="form-label">UUID</label>
+                                <input type="text" class="form-input" id="usbUuid" placeholder="例: XXXX-XXXX">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">マウントポイント</label>
+                                <input type="text" class="form-input" id="usbMountPoint" placeholder="例: /media/usb_backup">
+                            </div>
+                            <div class="form-group" style="grid-column: 1 / -1;">
+                                <label class="form-label">バックアップフォルダ</label>
+                                <input type="text" class="form-input" id="usbBackupFolder" placeholder="例: barcode_app_backups">
+                            </div>
+                        </div>
+                        <div style="margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap;">
+                            <button class="btn btn-primary" onclick="saveUsbSettings()">
+                                <i class="ph ph-floppy-disk"></i> USB設定を保存
+                            </button>
+                            <button class="btn btn-secondary" onclick="checkStorageStatus()">
+                                <i class="ph ph-arrow-clockwise"></i> 接続テスト
+                            </button>
+                            <span id="usbStatusResult" style="margin-left: 8px; line-height: 36px;"></span>
+                        </div>
+                    </div>
+                    {% else %}
+                    <div style="background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 12px;">
+                        <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px 16px;">
+                            <span class="text-muted">マウント先:</span>
+                            <span id="usbMountPointDisplay">-</span>
+                            <span class="text-muted">バックアップフォルダ:</span>
+                            <span id="usbBackupFolderDisplay">-</span>
+                        </div>
+                    </div>
+                    {% endif %}
                 </div>
 
                 <div class="mt-4">
@@ -172,6 +267,64 @@
                 </div>
             </div>
         </div>
+
+        <!-- バックアップ検証・診断（管理者のみ） -->
+        {% if user.is_admin %}
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title"><i class="ph ph-stethoscope"></i> バックアップ検証・診断</h2>
+            </div>
+            <div class="card-body">
+                <p class="text-muted" style="margin-bottom: 16px;">
+                    バックアップシステムの動作確認とデータ整合性の検証を行います。
+                </p>
+
+                <!-- 診断ボタン -->
+                <div style="display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 20px;">
+                    <button class="btn btn-secondary" onclick="runDiagnostics()">
+                        <i class="ph ph-magnifying-glass"></i> システム診断
+                    </button>
+                    <button class="btn btn-secondary" onclick="verifyBackup()">
+                        <i class="ph ph-check-circle"></i> バックアップ検証
+                    </button>
+                    <button class="btn btn-primary" onclick="insertDemoData()">
+                        <i class="ph ph-plus-circle"></i> デモデータ挿入＆バックアップ
+                    </button>
+                    <button class="btn btn-warning" onclick="cleanupDemoData()">
+                        <i class="ph ph-trash"></i> デモデータ削除
+                    </button>
+                </div>
+
+                <!-- 診断結果表示エリア -->
+                <div id="diagnosticsResult" style="display: none;">
+                    <h4 style="margin-bottom: 12px;"><i class="ph ph-clipboard-text"></i> 診断結果</h4>
+                    <div id="diagnosticsContent" style="background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px;">
+                    </div>
+                </div>
+
+                <!-- 検証結果表示エリア -->
+                <div id="verifyResult" style="display: none; margin-top: 16px;">
+                    <h4 style="margin-bottom: 12px;"><i class="ph ph-seal-check"></i> 検証結果</h4>
+                    <div id="verifyContent" style="background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px;">
+                    </div>
+                </div>
+
+                <!-- NAS直結運用設定（NAS選択時のみ） -->
+                <div class="mt-4" style="border-top: 1px solid var(--border-color); padding-top: 16px;" id="fstabSection" {{ 'style=display:none;' if backup_type == 'usb' else '' }}>
+                    <h4 style="margin-bottom: 12px;"><i class="ph ph-terminal"></i> 自動マウント設定（直結運用）</h4>
+                    <p class="text-muted" style="font-size: 0.85rem; margin-bottom: 12px;">
+                        Linux起動時にNASを自動マウントするためのfstab設定を生成します。
+                    </p>
+                    <button class="btn btn-secondary btn-sm" onclick="showFstabEntry()">
+                        <i class="ph ph-code"></i> fstabエントリを表示
+                    </button>
+                    <div id="fstabContent" style="display: none; margin-top: 12px;">
+                        <pre style="background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 0.85rem;"></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
 
         <!-- 監査ログ -->
         <div class="card">
@@ -361,26 +514,394 @@
             loadCurrentVersion();
         });
 
-        // NAS接続確認
-        function checkNasStatus() {
-            const resultSpan = document.getElementById('nasStatusResult');
-            resultSpan.innerHTML = '<span class="text-muted">確認中...</span>';
+        // バックアップタイプ切替
+        function changeBackupType(type) {
+            fetch('/settings/backup-type', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify({ backup_type: type })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showToast(`バックアップ先を${type === 'usb' ? 'USB' : 'NAS'}に変更しました`, 'success');
+                    // 設定セクションの表示切替
+                    document.getElementById('nasSettingsSection').style.display = type === 'nas' ? 'block' : 'none';
+                    document.getElementById('usbSettingsSection').style.display = type === 'usb' ? 'block' : 'none';
+                    // 選択状態の更新
+                    document.getElementById('backupTypeUsb').style.borderColor = type === 'usb' ? 'var(--primary)' : 'var(--border-color)';
+                    document.getElementById('backupTypeNas').style.borderColor = type === 'nas' ? 'var(--primary)' : 'var(--border-color)';
+                } else {
+                    showToast(data.error, 'error');
+                }
+            })
+            .catch(error => {
+                showToast('エラーが発生しました', 'error');
+                console.error('バックアップタイプ変更エラー:', error);
+            });
+        }
 
-            fetch('/settings/nas-status')
+        // ストレージ接続確認
+        function checkStorageStatus() {
+            const nasResult = document.getElementById('storageStatusResult');
+            const usbResult = document.getElementById('usbStatusResult');
+
+            if (nasResult) nasResult.innerHTML = '<span class="text-muted">確認中...</span>';
+            if (usbResult) usbResult.innerHTML = '<span class="text-muted">確認中...</span>';
+
+            fetch('/settings/storage-status')
                 .then(response => response.json())
                 .then(data => {
-                    if (data.reachable && data.status.connected) {
-                        resultSpan.innerHTML = '<span class="badge badge-success">接続OK</span>';
-                    } else if (data.reachable) {
-                        resultSpan.innerHTML = '<span class="badge badge-warning">ネットワーク到達可・マウント未完了</span>';
+                    let resultHtml = '';
+                    if (data.backup_type === 'nas') {
+                        if (data.reachable && data.status.connected) {
+                            resultHtml = '<span class="badge badge-success">接続OK</span>';
+                        } else if (data.reachable) {
+                            resultHtml = '<span class="badge badge-warning">ネットワーク到達可・マウント未完了</span>';
+                        } else {
+                            resultHtml = '<span class="badge badge-danger">接続不可</span>';
+                        }
+                        if (nasResult) nasResult.innerHTML = resultHtml;
                     } else {
-                        resultSpan.innerHTML = '<span class="badge badge-danger">接続不可</span>';
+                        if (data.connected) {
+                            resultHtml = '<span class="badge badge-success">接続OK</span>';
+                        } else {
+                            resultHtml = '<span class="badge badge-danger">未接続</span>';
+                        }
+                        if (usbResult) usbResult.innerHTML = resultHtml;
                     }
                 })
                 .catch(error => {
-                    resultSpan.innerHTML = '<span class="badge badge-danger">確認失敗</span>';
-                    console.error('NAS接続確認エラー:', error);
+                    const errorHtml = '<span class="badge badge-danger">確認失敗</span>';
+                    if (nasResult) nasResult.innerHTML = errorHtml;
+                    if (usbResult) usbResult.innerHTML = errorHtml;
+                    console.error('ストレージ接続確認エラー:', error);
                 });
+        }
+
+        // 初期表示時の選択状態を反映 & ストレージ設定を読み込み
+        document.addEventListener('DOMContentLoaded', () => {
+            const usbRadio = document.querySelector('input[name="backupType"][value="usb"]');
+            const nasRadio = document.querySelector('input[name="backupType"][value="nas"]');
+            if (usbRadio && usbRadio.checked) {
+                document.getElementById('backupTypeUsb').style.borderColor = 'var(--primary)';
+            }
+            if (nasRadio && nasRadio.checked) {
+                document.getElementById('backupTypeNas').style.borderColor = 'var(--primary)';
+            }
+            // ストレージ設定を読み込み
+            loadStorageConfig();
+        });
+
+        // ストレージ設定を読み込み
+        function loadStorageConfig() {
+            fetch('/settings/storage-config')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) return;
+
+                    // NAS設定を入力欄に反映
+                    const nasHost = document.getElementById('nasHost');
+                    const nasShare = document.getElementById('nasShare');
+                    const nasUsername = document.getElementById('nasUsername');
+                    const nasPassword = document.getElementById('nasPassword');
+                    const nasMountPoint = document.getElementById('nasMountPoint');
+                    const nasBackupFolder = document.getElementById('nasBackupFolder');
+
+                    if (nasHost) nasHost.value = data.nas.host || '';
+                    if (nasShare) nasShare.value = data.nas.share || '';
+                    if (nasUsername) nasUsername.value = data.nas.username || '';
+                    if (nasPassword) nasPassword.value = data.nas.password || '';
+                    if (nasMountPoint) nasMountPoint.value = data.nas.mount_point || '';
+                    if (nasBackupFolder) nasBackupFolder.value = data.nas.backup_folder || '';
+
+                    // 一般ユーザー向け表示を更新
+                    const nasHostDisplay = document.getElementById('nasHostDisplay');
+                    const nasShareDisplay = document.getElementById('nasShareDisplay');
+                    const nasMountPointDisplay = document.getElementById('nasMountPointDisplay');
+                    if (nasHostDisplay) nasHostDisplay.textContent = data.nas.host || '(未設定)';
+                    if (nasShareDisplay) nasShareDisplay.textContent = data.nas.share || '(未設定)';
+                    if (nasMountPointDisplay) nasMountPointDisplay.textContent = data.nas.mount_point || '(未設定)';
+
+                    // USB設定を入力欄に反映
+                    const usbUuid = document.getElementById('usbUuid');
+                    const usbMountPoint = document.getElementById('usbMountPoint');
+                    const usbBackupFolder = document.getElementById('usbBackupFolder');
+
+                    if (usbUuid) usbUuid.value = data.usb.uuid || '';
+                    if (usbMountPoint) usbMountPoint.value = data.usb.mount_point || '';
+                    if (usbBackupFolder) usbBackupFolder.value = data.usb.backup_folder || '';
+
+                    // 一般ユーザー向け表示を更新
+                    const usbMountPointDisplay = document.getElementById('usbMountPointDisplay');
+                    const usbBackupFolderDisplay = document.getElementById('usbBackupFolderDisplay');
+                    if (usbMountPointDisplay) usbMountPointDisplay.textContent = data.usb.mount_point || '(未設定)';
+                    if (usbBackupFolderDisplay) usbBackupFolderDisplay.textContent = data.usb.backup_folder || '(未設定)';
+                })
+                .catch(error => {
+                    console.error('ストレージ設定読み込みエラー:', error);
+                });
+        }
+
+        // NAS設定を保存
+        function saveNasSettings() {
+            const data = {
+                type: 'nas',
+                host: document.getElementById('nasHost').value.trim(),
+                share: document.getElementById('nasShare').value.trim(),
+                username: document.getElementById('nasUsername').value.trim(),
+                password: document.getElementById('nasPassword').value,
+                mount_point: document.getElementById('nasMountPoint').value.trim(),
+                backup_folder: document.getElementById('nasBackupFolder').value.trim()
+            };
+
+            if (!data.host) {
+                showToast('ホスト（IPアドレス）を入力してください', 'error');
+                return;
+            }
+            if (!data.share) {
+                showToast('共有名を入力してください', 'error');
+                return;
+            }
+
+            fetch('/settings/storage-config', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    showToast('NAS設定を保存しました', 'success');
+                } else {
+                    showToast(result.error || '保存に失敗しました', 'error');
+                }
+            })
+            .catch(error => {
+                showToast('エラーが発生しました', 'error');
+                console.error('NAS設定保存エラー:', error);
+            });
+        }
+
+        // USB設定を保存
+        function saveUsbSettings() {
+            const data = {
+                type: 'usb',
+                uuid: document.getElementById('usbUuid').value.trim(),
+                mount_point: document.getElementById('usbMountPoint').value.trim(),
+                backup_folder: document.getElementById('usbBackupFolder').value.trim()
+            };
+
+            fetch('/settings/storage-config', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    showToast('USB設定を保存しました', 'success');
+                } else {
+                    showToast(result.error || '保存に失敗しました', 'error');
+                }
+            })
+            .catch(error => {
+                showToast('エラーが発生しました', 'error');
+                console.error('USB設定保存エラー:', error);
+            });
+        }
+
+        // システム診断
+        function runDiagnostics() {
+            showToast('診断を実行しています...', 'info');
+            const resultDiv = document.getElementById('diagnosticsResult');
+            const contentDiv = document.getElementById('diagnosticsContent');
+            resultDiv.style.display = 'none';
+
+            fetch('/settings/backup-diagnostics')
+                .then(response => response.json())
+                .then(data => {
+                    resultDiv.style.display = 'block';
+
+                    const statusIcon = {
+                        'ok': '<i class="ph ph-check-circle" style="color: var(--success);"></i>',
+                        'warning': '<i class="ph ph-warning" style="color: var(--warning);"></i>',
+                        'error': '<i class="ph ph-x-circle" style="color: var(--danger);"></i>',
+                        'skip': '<i class="ph ph-minus-circle" style="color: var(--text-sub);"></i>'
+                    };
+
+                    let html = `<div style="margin-bottom: 12px;">
+                        <span class="badge ${data.overall === 'ok' ? 'badge-success' : data.overall === 'warning' ? 'badge-warning' : 'badge-danger'}">
+                            総合: ${data.overall === 'ok' ? '正常' : data.overall === 'warning' ? '警告あり' : 'エラーあり'}
+                        </span>
+                        <span class="badge badge-info" style="margin-left: 4px;">${data.backup_type === 'usb' ? 'USB' : 'NAS'}</span>
+                        <small class="text-muted" style="margin-left: 8px;">${data.timestamp}</small>
+                    </div>`;
+
+                    html += '<table class="table" style="margin: 0;"><tbody>';
+                    data.tests.forEach(test => {
+                        html += `<tr>
+                            <td style="width: 30px;">${statusIcon[test.status]}</td>
+                            <td style="font-weight: 500;">${test.name}</td>
+                            <td class="text-muted">${test.detail}</td>
+                        </tr>`;
+                    });
+                    html += '</tbody></table>';
+
+                    contentDiv.innerHTML = html;
+                    showToast('診断完了', 'success');
+                })
+                .catch(error => {
+                    contentDiv.innerHTML = '<span class="text-danger">診断に失敗しました</span>';
+                    resultDiv.style.display = 'block';
+                    showToast('診断に失敗しました', 'error');
+                });
+        }
+
+        // バックアップ検証
+        function verifyBackup() {
+            showToast('バックアップを検証しています...', 'info');
+            const resultDiv = document.getElementById('verifyResult');
+            const contentDiv = document.getElementById('verifyContent');
+            resultDiv.style.display = 'none';
+
+            fetch('/settings/backup-verify', {
+                method: 'POST',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            })
+            .then(response => response.json())
+            .then(data => {
+                resultDiv.style.display = 'block';
+
+                if (data.success) {
+                    contentDiv.innerHTML = `
+                        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+                            <i class="ph ph-seal-check" style="font-size: 32px; color: var(--success);"></i>
+                            <div>
+                                <strong style="color: var(--success);">バックアップ検証成功</strong><br>
+                                <small class="text-muted">ファイル: ${data.filename}</small>
+                            </div>
+                        </div>
+                        <div style="display: grid; grid-template-columns: auto 1fr; gap: 4px 12px;">
+                            <span class="text-muted">ローカルサイズ:</span><span>${formatBytes(data.local_size)}</span>
+                            <span class="text-muted">リモートサイズ:</span><span>${formatBytes(data.remote_size)}</span>
+                            ${data.hash ? `<span class="text-muted">ハッシュ:</span><span style="font-family: monospace;">${data.hash.substring(0, 16)}...</span>` : ''}
+                        </div>
+                    `;
+                    showToast('検証成功！バックアップは正常です', 'success');
+                } else {
+                    contentDiv.innerHTML = `
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <i class="ph ph-x-circle" style="font-size: 32px; color: var(--danger);"></i>
+                            <div>
+                                <strong style="color: var(--danger);">バックアップ検証失敗</strong><br>
+                                <small class="text-muted">${data.error}</small>
+                            </div>
+                        </div>
+                    `;
+                    showToast('検証失敗: ' + data.error, 'error');
+                }
+            })
+            .catch(error => {
+                contentDiv.innerHTML = '<span class="text-danger">検証に失敗しました</span>';
+                resultDiv.style.display = 'block';
+                showToast('検証に失敗しました', 'error');
+            });
+        }
+
+        // デモデータ挿入
+        function insertDemoData() {
+            if (!confirm('デモデータを挿入してバックアップを実行しますか？')) return;
+
+            showToast('デモデータを挿入しています...', 'info');
+
+            fetch('/settings/insert-demo-data', {
+                method: 'POST',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showToast(data.message, 'success');
+                    loadBackupList();
+                    // 自動的に検証を実行
+                    setTimeout(() => verifyBackup(), 1000);
+                } else {
+                    showToast(data.error, 'error');
+                }
+            })
+            .catch(error => {
+                showToast('エラーが発生しました', 'error');
+            });
+        }
+
+        // デモデータ削除
+        function cleanupDemoData() {
+            if (!confirm('すべてのデモデータを削除しますか？')) return;
+
+            fetch('/settings/cleanup-demo-data', {
+                method: 'POST',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showToast(data.message, 'success');
+                } else {
+                    showToast(data.error, 'error');
+                }
+            })
+            .catch(error => {
+                showToast('エラーが発生しました', 'error');
+            });
+        }
+
+        // fstabエントリ表示
+        function showFstabEntry() {
+            const contentDiv = document.getElementById('fstabContent');
+            const preElement = contentDiv.querySelector('pre');
+
+            if (contentDiv.style.display === 'block') {
+                contentDiv.style.display = 'none';
+                return;
+            }
+
+            fetch('/settings/fstab-entry')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        let text = '# バックアップNAS自動マウント設定\n';
+                        text += '# 以下を /etc/fstab に追加してください:\n\n';
+                        text += data.entry + '\n\n';
+                        text += '# 設定後のテスト:\n';
+                        text += '# sudo mount -a\n';
+                        preElement.textContent = text;
+                        contentDiv.style.display = 'block';
+                    } else {
+                        showToast(data.error, 'error');
+                    }
+                })
+                .catch(error => {
+                    showToast('取得に失敗しました', 'error');
+                });
+        }
+
+        // バイトフォーマット
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
         }
 
         // ユーザー追加モーダル

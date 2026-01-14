@@ -31,31 +31,58 @@
     </div>
 
     <div class="login-container">
-        <!-- NAS接続状態バナー -->
-        {% if nas_status %}
-            {% if not nas_status.host %}
-                <!-- 開発モード -->
-                <div class="usb-banner usb-banner-dev">
-                    <i class="ph-bold ph-code"></i>
-                    <span>開発モード：NAS設定なし</span>
-                </div>
-            {% elif nas_status.connected %}
-                <!-- NAS接続済み -->
-                <div class="usb-banner usb-banner-success">
-                    <i class="ph-bold ph-check-circle"></i>
-                    <span>バックアップ用NAS接続済み</span>
-                </div>
-            {% else %}
-                <!-- NAS未接続 -->
-                <div class="usb-banner usb-banner-warning">
-                    <i class="ph-bold ph-warning-circle"></i>
-                    <div>
-                        <strong>NASに接続できません</strong>
-                        <p style="font-size: 14px; margin: 4px 0 0 0; opacity: 0.9;">
-                            一般ユーザーはNAS接続が必須です（管理者は接続不要）
-                        </p>
+        <!-- ストレージ接続状態バナー -->
+        {% if storage_status %}
+            {% if storage_status.type == 'usb' %}
+                {% if not storage_status.uuid %}
+                    <!-- 開発モード -->
+                    <div class="usb-banner usb-banner-dev">
+                        <i class="ph-bold ph-code"></i>
+                        <span>開発モード：USB設定なし</span>
                     </div>
-                </div>
+                {% elif storage_status.connected %}
+                    <!-- USB接続済み -->
+                    <div class="usb-banner usb-banner-success">
+                        <i class="ph-bold ph-check-circle"></i>
+                        <span>バックアップ用USB接続済み</span>
+                    </div>
+                {% else %}
+                    <!-- USB未接続 -->
+                    <div class="usb-banner usb-banner-warning">
+                        <i class="ph-bold ph-warning-circle"></i>
+                        <div>
+                            <strong>USBに接続できません</strong>
+                            <p style="font-size: 14px; margin: 4px 0 0 0; opacity: 0.9;">
+                                一般ユーザーはUSB接続が必須です（管理者は接続不要）
+                            </p>
+                        </div>
+                    </div>
+                {% endif %}
+            {% else %}
+                {% if not storage_status.host %}
+                    <!-- 開発モード -->
+                    <div class="usb-banner usb-banner-dev">
+                        <i class="ph-bold ph-code"></i>
+                        <span>開発モード：NAS設定なし</span>
+                    </div>
+                {% elif storage_status.connected %}
+                    <!-- NAS接続済み -->
+                    <div class="usb-banner usb-banner-success">
+                        <i class="ph-bold ph-check-circle"></i>
+                        <span>バックアップ用NAS接続済み</span>
+                    </div>
+                {% else %}
+                    <!-- NAS未接続 -->
+                    <div class="usb-banner usb-banner-warning">
+                        <i class="ph-bold ph-warning-circle"></i>
+                        <div>
+                            <strong>NASに接続できません</strong>
+                            <p style="font-size: 14px; margin: 4px 0 0 0; opacity: 0.9;">
+                                一般ユーザーはNAS接続が必須です（管理者は接続不要）
+                            </p>
+                        </div>
+                    </div>
+                {% endif %}
             {% endif %}
         {% endif %}
 

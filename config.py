@@ -22,6 +22,9 @@ class Config:
     # セッション
     PERMANENT_SESSION_LIFETIME = timedelta(hours=8)
 
+    # バックアップタイプ（'nas' または 'usb'）
+    BACKUP_TYPE = os.getenv('BACKUP_TYPE', 'nas')
+
     # NAS バックアップ（SMB/CIFS）
     NAS_HOST = os.getenv('NAS_HOST', '10.77.233.97')
     NAS_SHARE = os.getenv('NAS_SHARE', 'share')
@@ -31,10 +34,11 @@ class Config:
     NAS_REQUIRED = os.getenv('NAS_REQUIRED', 'True').lower() == 'true'
     NAS_BACKUP_FOLDER = os.getenv('NAS_BACKUP_FOLDER', 'barcode_app_backups')
 
-    # USB バックアップ（レガシー、NAS優先）
+    # USB バックアップ
     USB_UUID = os.getenv('USB_UUID', '')
     USB_MOUNT_POINT = os.getenv('USB_MOUNT_POINT', '/media/usb_backup')
-    USB_REQUIRED = os.getenv('USB_REQUIRED', 'False').lower() == 'true'
+    USB_REQUIRED = os.getenv('USB_REQUIRED', 'True').lower() == 'true'
+    USB_BACKUP_FOLDER = os.getenv('USB_BACKUP_FOLDER', 'barcode_app_backups')
 
     # バックアップ
     BACKUP_TIME = os.getenv('BACKUP_TIME', '02:00')

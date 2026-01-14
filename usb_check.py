@@ -9,14 +9,35 @@ import re
 from config import Config
 
 
+def get_usb_setting(key, default=None):
+    """AppSettingsからUSB設定を取得（フォールバック: Config）"""
+    try:
+        from flask import current_app
+        if current_app:
+            from models import AppSettings
+            value = AppSettings.get(f'usb_{key}')
+            if value is not None and value != '':
+                return value
+    except (RuntimeError, ImportError):
+        # Flaskコンテキスト外
+        pass
+
+    # Config からフォールバック
+    config_key = f'USB_{key.upper()}'
+    return getattr(Config, config_key, default)
+
+
 class USBChecker:
     """USBメモリの接続状態を確認"""
 
     def __init__(self):
         self.system = platform.system()
-        self.uuid = Config.USB_UUID
-        self.mount_point = Config.USB_MOUNT_POINT
-        self.required = Config.USB_REQUIRED
+        # AppSettings優先で設定を読み込み
+        self.uuid = get_usb_setting('uuid', '')
+        self.mount_point = get_usb_setting('mount_point', '/media/usb_backup')
+        required_val = get_usb_setting('required', 'true')
+        self.required = str(required_val).lower() == 'true'
+        self.backup_folder = get_usb_setting('backup_folder', 'barcode_app_backups')
 
     def is_connected(self):
         """USBが接続されているか確認"""
