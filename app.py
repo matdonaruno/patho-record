@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from functools import wraps
 
 # アプリバージョン
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.3.1"
 GITHUB_REPO = "matdonaruno/patho-record"
 
 from flask import (
@@ -1265,7 +1265,7 @@ def insert_demo_data():
                 barcode=barcode,
                 patient_id=f"P{timestamp}{i}",
                 notes=f"バックアップテスト用デモデータ #{i+1}",
-                user_id=user.id,
+                scanned_by_id=user.id,
                 quantity=1,
                 expected_return_date=datetime.utcnow() + timedelta(days=14)
             )
