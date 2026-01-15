@@ -1311,7 +1311,7 @@
             const btn = document.getElementById('doUpdateBtn');
             const statusDiv = document.getElementById('updateStatus');
 
-            if (!confirm('アップデートを実行しますか？\n更新後はアプリの再起動が必要な場合があります。')) {
+            if (!confirm('アップデートを実行しますか？')) {
                 return;
             }
 
@@ -1331,15 +1331,30 @@
                 btn.innerHTML = '<i class="ph ph-download"></i> 今すぐ更新';
 
                 if (data.success) {
-                    if (data.needs_restart) {
+                    if (data.auto_restart) {
+                        // 自動再起動の場合
                         statusDiv.innerHTML = `
                             <div class="badge badge-success" style="display: block; padding: 12px;">
-                                <i class="ph ph-check"></i> ${data.message}<br>
-                                <small style="opacity: 0.8;">ブラウザを更新するか、アプリを再起動してください。</small>
+                                <i class="ph ph-arrows-clockwise"></i> ${data.message}<br>
+                                <small style="opacity: 0.8;">ページを自動リロードします...</small>
                             </div>
                         `;
                         btn.style.display = 'none';
-                        showToast('アップデート完了！再起動してください。', 'success');
+                        showToast('アップデート完了！再起動中...', 'success');
+                        // 5秒後にページをリロード（サーバー再起動を待つ）
+                        setTimeout(() => {
+                            statusDiv.innerHTML += '<br><span class="text-muted">リロード中...</span>';
+                            setTimeout(() => location.reload(), 1000);
+                        }, 4000);
+                    } else if (data.needs_restart) {
+                        statusDiv.innerHTML = `
+                            <div class="badge badge-success" style="display: block; padding: 12px;">
+                                <i class="ph ph-check"></i> ${data.message}<br>
+                                <small style="opacity: 0.8;">ブラウザを更新してください。</small>
+                            </div>
+                        `;
+                        btn.style.display = 'none';
+                        showToast('アップデート完了！', 'success');
                     } else {
                         statusDiv.innerHTML = '<span class="badge badge-success"><i class="ph ph-check"></i> ' + data.message + '</span>';
                         showToast(data.message, 'info');

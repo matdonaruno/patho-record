@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from functools import wraps
 
 # アプリバージョン
-APP_VERSION = "1.2.1"
+APP_VERSION = "1.3.0"
 GITHUB_REPO = "matdonaruno/patho-record"
 
 from flask import (
@@ -1510,7 +1510,7 @@ def check_update():
 @app.route('/settings/do-update', methods=['POST'])
 @login_required
 def do_update():
-    """git pullでアップデートを実行"""
+    """git pullでアップデートを実行し、必要に応じて自動再起動"""
     try:
         # アプリのディレクトリを取得
         app_dir = os.path.dirname(os.path.abspath(__file__))
@@ -1534,10 +1534,20 @@ def do_update():
                     'output': output
                 })
             else:
+                # アップデートがあった場合、自動再起動をスケジュール
+                import threading
+                def delayed_restart():
+                    import time
+                    time.sleep(2)  # レスポンスを返す時間を確保
+                    restart_app()
+
+                threading.Thread(target=delayed_restart, daemon=True).start()
+
                 return jsonify({
                     'success': True,
-                    'message': 'アップデート完了。アプリを再起動してください。',
+                    'message': 'アップデート完了。3秒後に自動再起動します...',
                     'needs_restart': True,
+                    'auto_restart': True,
                     'output': output
                 })
         else:
@@ -1556,6 +1566,13 @@ def do_update():
             'success': False,
             'error': f'エラー: {str(e)}'
         })
+
+
+def restart_app():
+    """アプリを再起動"""
+    import sys
+    logger.info("アプリを再起動します...")
+    os.execv(sys.executable, [sys.executable] + sys.argv)
 
 
 # ============================================================
