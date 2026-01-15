@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from functools import wraps
 
 # アプリバージョン
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.2.1"
 GITHUB_REPO = "matdonaruno/patho-record"
 
 from flask import (
@@ -35,6 +35,23 @@ from validators import (
 # Flask アプリ初期化
 app = Flask(__name__)
 app.config.from_object(Config)
+
+
+# テンプレートにバージョンを渡す（キャッシュバスティング用）
+@app.context_processor
+def inject_version():
+    return {'app_version': APP_VERSION}
+
+
+# HTMLページのキャッシュを無効化
+@app.after_request
+def add_cache_headers(response):
+    if response.content_type and 'text/html' in response.content_type:
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+    return response
+
 
 # データベース初期化
 db.init_app(app)
