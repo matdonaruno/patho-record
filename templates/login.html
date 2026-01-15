@@ -35,10 +35,10 @@
         {% if storage_status %}
             {% if storage_status.type == 'usb' %}
                 {% if not storage_status.uuid %}
-                    <!-- 開発モード -->
-                    <div class="usb-banner usb-banner-dev">
-                        <i class="ph-bold ph-code"></i>
-                        <span>開発モード：USB設定なし</span>
+                    <!-- USB未設定 -->
+                    <div class="usb-banner usb-banner-info">
+                        <i class="ph-bold ph-gear"></i>
+                        <span>USBバックアップ未設定（管理者でログインして設定）</span>
                     </div>
                 {% elif storage_status.connected %}
                     <!-- USB接続済み -->
@@ -60,10 +60,10 @@
                 {% endif %}
             {% else %}
                 {% if not storage_status.host %}
-                    <!-- 開発モード -->
-                    <div class="usb-banner usb-banner-dev">
-                        <i class="ph-bold ph-code"></i>
-                        <span>開発モード：NAS設定なし</span>
+                    <!-- NAS未設定 -->
+                    <div class="usb-banner usb-banner-info">
+                        <i class="ph-bold ph-gear"></i>
+                        <span>NASバックアップ未設定（管理者でログインして設定）</span>
                     </div>
                 {% elif storage_status.connected %}
                     <!-- NAS接続済み -->

@@ -153,55 +153,89 @@
                 <div class="mt-4" style="border-top: 1px solid var(--border-color); padding-top: 16px;" id="nasSettingsSection" {{ 'style=display:none;' if backup_type == 'usb' else '' }}>
                     <h4 style="margin-bottom: 12px;"><i class="ph ph-hard-drives"></i> NAS設定</h4>
                     {% if user.is_admin %}
-                    <p class="text-muted" style="font-size: 0.85rem; margin-bottom: 12px;">
-                        Buffalo NAS直結運用の場合: ホストIP 192.168.0.100、共有名 share を設定してください。
-                    </p>
                     <div style="background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px;">
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                            <div class="form-group">
-                                <label class="form-label">ホスト (IPアドレス)</label>
-                                <input type="text" class="form-input" id="nasHost" placeholder="例: 192.168.0.100">
+                        <!-- かんたん設定 -->
+                        <div style="margin-bottom: 16px;">
+                            <label class="form-label" style="font-weight: bold;"><i class="ph ph-magic-wand"></i> かんたん設定</label>
+                            <p class="text-muted" style="font-size: 0.85rem; margin-bottom: 8px;">
+                                NASのIPアドレスを入力して「自動検出」をクリックするだけで設定完了
+                            </p>
+                            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                                <input type="text" class="form-input" id="nasHostSimple" placeholder="NASのIPアドレス（例: 192.168.0.100）" style="flex: 1; min-width: 200px;">
+                                <button class="btn btn-primary" onclick="autoDetectNas()">
+                                    <i class="ph ph-magnifying-glass"></i> 自動検出して設定
+                                </button>
                             </div>
-                            <div class="form-group">
-                                <label class="form-label">共有名</label>
-                                <input type="text" class="form-input" id="nasShare" placeholder="例: share">
+                            <div id="nasDetectResult" style="margin-top: 8px;"></div>
+                        </div>
+
+                        <!-- 現在の設定表示 -->
+                        <div id="nasCurrentSettings" style="border-top: 1px solid var(--border-color); padding-top: 12px;">
+                            <label class="form-label" style="font-weight: bold;">現在の設定</label>
+                            <div style="display: grid; grid-template-columns: auto 1fr; gap: 4px 16px; font-size: 0.9rem;">
+                                <span class="text-muted">ホスト:</span>
+                                <span id="nasHostDisplay">未設定</span>
+                                <span class="text-muted">共有名:</span>
+                                <span id="nasShareDisplay">未設定</span>
+                                <span class="text-muted">マウント先:</span>
+                                <span id="nasMountPointDisplay">未設定</span>
                             </div>
-                            <div class="form-group">
-                                <label class="form-label">ユーザー名 (空欄=匿名)</label>
-                                <input type="text" class="form-input" id="nasUsername" placeholder="匿名の場合は空欄">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">パスワード</label>
-                                <input type="password" class="form-input" id="nasPassword" placeholder="匿名の場合は空欄">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">マウントポイント</label>
-                                <input type="text" class="form-input" id="nasMountPoint" placeholder="例: /mnt/nas_backup">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">バックアップフォルダ</label>
-                                <input type="text" class="form-input" id="nasBackupFolder" placeholder="例: barcode_app_backups">
+                            <div style="margin-top: 12px;">
+                                <button class="btn btn-secondary btn-sm" onclick="checkStorageStatus()">
+                                    <i class="ph ph-arrow-clockwise"></i> 接続テスト
+                                </button>
+                                <button class="btn btn-secondary btn-sm" onclick="toggleAdvancedNasSettings()">
+                                    <i class="ph ph-gear"></i> 詳細設定
+                                </button>
+                                <span id="storageStatusResult" style="margin-left: 8px;"></span>
                             </div>
                         </div>
-                        <div style="margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap;">
-                            <button class="btn btn-primary" onclick="saveNasSettings()">
-                                <i class="ph ph-floppy-disk"></i> NAS設定を保存
-                            </button>
-                            <button class="btn btn-secondary" onclick="checkStorageStatus()">
-                                <i class="ph ph-arrow-clockwise"></i> 接続テスト
-                            </button>
-                            <span id="storageStatusResult" style="margin-left: 8px; line-height: 36px;"></span>
+
+                        <!-- 詳細設定（折りたたみ） -->
+                        <div id="nasAdvancedSettings" style="display: none; border-top: 1px solid var(--border-color); padding-top: 12px; margin-top: 12px;">
+                            <label class="form-label" style="font-weight: bold;">詳細設定</label>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                                <div class="form-group">
+                                    <label class="form-label">ホスト (IPアドレス)</label>
+                                    <input type="text" class="form-input" id="nasHost" placeholder="例: 192.168.0.100">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">共有名</label>
+                                    <input type="text" class="form-input" id="nasShare" placeholder="例: share">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">ユーザー名 (空欄=匿名)</label>
+                                    <input type="text" class="form-input" id="nasUsername" placeholder="匿名の場合は空欄">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">パスワード</label>
+                                    <input type="password" class="form-input" id="nasPassword" placeholder="匿名の場合は空欄">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">マウントポイント</label>
+                                    <input type="text" class="form-input" id="nasMountPoint" placeholder="例: /mnt/nas_backup">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">バックアップフォルダ</label>
+                                    <input type="text" class="form-input" id="nasBackupFolder" placeholder="例: barcode_app_backups">
+                                </div>
+                            </div>
+                            <div style="margin-top: 12px;">
+                                <button class="btn btn-primary" onclick="saveNasSettings()">
+                                    <i class="ph ph-floppy-disk"></i> 詳細設定を保存
+                                </button>
+                            </div>
                         </div>
                     </div>
                     {% else %}
                     <div style="background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 12px;">
                         <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px 16px;">
                             <span class="text-muted">ホスト:</span>
-                            <span id="nasHostDisplay">-</span>
+                            <span id="nasHostDisplayUser">-</span>
                             <span class="text-muted">共有名:</span>
-                            <span id="nasShareDisplay">-</span>
+                            <span id="nasShareDisplayUser">-</span>
                             <span class="text-muted">マウント先:</span>
-                            <span id="nasMountPointDisplay">-</span>
+                            <span id="nasMountPointDisplayUser">-</span>
                         </div>
                     </div>
                     {% endif %}
@@ -1296,6 +1330,87 @@
                 toast.style.opacity = '0';
                 setTimeout(() => toast.remove(), 300);
             }, 3000);
+        }
+
+        // NAS自動検出
+        function autoDetectNas() {
+            const hostInput = document.getElementById('nasHostSimple');
+            const resultDiv = document.getElementById('nasDetectResult');
+            const host = hostInput.value.trim();
+
+            if (!host) {
+                showToast('IPアドレスを入力してください', 'error');
+                hostInput.focus();
+                return;
+            }
+
+            // IP形式チェック
+            const ipPattern = /^(\d{1,3}\.){3}\d{1,3}$/;
+            if (!ipPattern.test(host)) {
+                showToast('正しいIPアドレス形式で入力してください（例: 192.168.0.100）', 'error');
+                return;
+            }
+
+            resultDiv.innerHTML = '<span class="text-muted"><i class="ph ph-spinner"></i> NASを検索中...</span>';
+
+            fetch('/settings/nas-detect', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify({ host: host })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    resultDiv.innerHTML = `
+                        <div class="badge badge-success" style="display: inline-block; padding: 8px 12px;">
+                            <i class="ph ph-check-circle"></i> ${data.message}
+                        </div>
+                    `;
+                    showToast('NAS設定が保存されました', 'success');
+
+                    // 表示を更新
+                    const detected = data.detected;
+                    document.getElementById('nasHostDisplay').textContent = detected.host || '未設定';
+                    document.getElementById('nasShareDisplay').textContent = detected.share || '未設定';
+                    document.getElementById('nasMountPointDisplay').textContent = detected.mount_point || '未設定';
+
+                    // 詳細設定の入力欄も更新
+                    const nasHost = document.getElementById('nasHost');
+                    const nasShare = document.getElementById('nasShare');
+                    const nasMountPoint = document.getElementById('nasMountPoint');
+                    if (nasHost) nasHost.value = detected.host || '';
+                    if (nasShare) nasShare.value = detected.share || '';
+                    if (nasMountPoint) nasMountPoint.value = detected.mount_point || '';
+
+                    // 接続テストを自動実行
+                    setTimeout(() => checkStorageStatus(), 500);
+                } else {
+                    resultDiv.innerHTML = `
+                        <div class="badge badge-danger" style="display: inline-block; padding: 8px 12px;">
+                            <i class="ph ph-x-circle"></i> ${data.error}
+                        </div>
+                    `;
+                    showToast(data.error, 'error');
+                }
+            })
+            .catch(error => {
+                resultDiv.innerHTML = '<span class="text-danger">検出に失敗しました</span>';
+                showToast('NAS検出に失敗しました', 'error');
+                console.error('NAS自動検出エラー:', error);
+            });
+        }
+
+        // 詳細設定の表示切替
+        function toggleAdvancedNasSettings() {
+            const advancedDiv = document.getElementById('nasAdvancedSettings');
+            if (advancedDiv.style.display === 'none') {
+                advancedDiv.style.display = 'block';
+            } else {
+                advancedDiv.style.display = 'none';
+            }
         }
 
         // Enterキーで追加

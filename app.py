@@ -983,6 +983,92 @@ def settings_storage_config():
     return jsonify({'success': True})
 
 
+@app.route('/settings/nas-detect', methods=['POST'])
+@login_required
+def nas_auto_detect():
+    """NASのIPアドレスから共有フォルダを自動検出し、設定を自動保存"""
+    user = get_current_user()
+    if not user.is_admin:
+        return jsonify({'error': '管理者権限が必要です'}), 403
+
+    data = sanitize_input(request.json or {})
+    host = data.get('host', '').strip()
+
+    if not host:
+        return jsonify({'error': 'IPアドレスを入力してください'}), 400
+
+    import subprocess
+
+    # 1. ping で到達確認
+    try:
+        result = subprocess.run(
+            ['ping', '-c', '1', '-W', '2', host],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode != 0:
+            return jsonify({'error': f'{host} に接続できません。IPアドレスを確認してください'}), 400
+    except Exception:
+        return jsonify({'error': f'{host} への接続がタイムアウトしました'}), 400
+
+    # 2. smbclient で共有フォルダを検出
+    shares = []
+    try:
+        result = subprocess.run(
+            ['smbclient', '-L', f'//{host}', '-N'],
+            capture_output=True, text=True, timeout=10
+        )
+        # 共有フォルダをパース
+        in_share_section = False
+        for line in result.stdout.split('\n'):
+            if 'Sharename' in line and 'Type' in line:
+                in_share_section = True
+                continue
+            if in_share_section:
+                if line.strip() == '' or 'Reconnecting' in line:
+                    break
+                parts = line.split()
+                if len(parts) >= 2 and parts[1] == 'Disk':
+                    share_name = parts[0]
+                    # システム共有を除外
+                    if not share_name.startswith('IPC') and not share_name.endswith('$'):
+                        shares.append(share_name)
+    except subprocess.TimeoutExpired:
+        return jsonify({'error': 'NASからの応答がタイムアウトしました'}), 400
+    except FileNotFoundError:
+        # smbclient がない場合はデフォルト値を使用
+        shares = ['share']
+    except Exception as e:
+        return jsonify({'error': f'共有フォルダの検出に失敗: {str(e)}'}), 400
+
+    # 3. 最初の共有フォルダを使用（なければ 'share'）
+    detected_share = shares[0] if shares else 'share'
+
+    # 4. 設定を自動保存
+    AppSettings.set('nas_host', host)
+    AppSettings.set('nas_share', detected_share)
+    AppSettings.set('nas_mount_point', '/mnt/nas_backup')
+    AppSettings.set('nas_backup_folder', 'barcode_app_backups')
+    # 認証情報は空（匿名アクセス）
+    if not AppSettings.get('nas_username'):
+        AppSettings.set('nas_username', '')
+    if not AppSettings.get('nas_password'):
+        AppSettings.set('nas_password', '')
+
+    logger.info(f"NAS設定を自動検出・保存: {host}/{detected_share} (ユーザー: {user.name})")
+
+    return jsonify({
+        'success': True,
+        'detected': {
+            'host': host,
+            'share': detected_share,
+            'shares_available': shares,
+            'mount_point': '/mnt/nas_backup',
+            'backup_folder': 'barcode_app_backups'
+        },
+        'message': f'NAS設定を保存しました: {host}/{detected_share}'
+    })
+
+
 # ============================================================
 # バックアップ検証・診断機能
 # ============================================================

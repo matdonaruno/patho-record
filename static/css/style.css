@@ -330,13 +330,13 @@ body {
     color: var(--pastel-green-dark);
 }
 
-.usb-banner-dev {
+.usb-banner-info {
     background: linear-gradient(135deg, rgba(168, 216, 255, 0.2), rgba(91, 176, 255, 0.25));
     border-color: var(--pastel-blue-dark);
     color: #2D4A6E;
 }
 
-.usb-banner-dev i {
+.usb-banner-info i {
     color: var(--pastel-blue-dark);
 }
 
