@@ -7,15 +7,24 @@ import shutil
 import sqlite3
 from datetime import datetime, timedelta
 from config import Config
-from models import AppSettings
 import logging
 
 logger = logging.getLogger(__name__)
 
 
 def get_backup_type():
-    """現在のバックアップタイプを取得（AppSettings優先）"""
-    return AppSettings.get('backup_type', Config.BACKUP_TYPE)
+    """現在のバックアップタイプを取得（AppSettings優先、フォールバック: Config）"""
+    try:
+        from flask import has_app_context
+        if has_app_context():
+            from models import AppSettings
+            value = AppSettings.get('backup_type')
+            if value:
+                return value
+    except (RuntimeError, ImportError):
+        # Flaskコンテキスト外
+        pass
+    return Config.BACKUP_TYPE
 
 
 class BackupManager:

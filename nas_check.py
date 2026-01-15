@@ -17,8 +17,8 @@ logger = logging.getLogger(__name__)
 def get_nas_setting(key, default=None):
     """AppSettingsからNAS設定を取得（フォールバック: Config）"""
     try:
-        from flask import current_app
-        if current_app:
+        from flask import has_app_context
+        if has_app_context():
             from models import AppSettings
             value = AppSettings.get(f'nas_{key}')
             if value is not None and value != '':

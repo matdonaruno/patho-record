@@ -26,18 +26,20 @@ class Config:
     BACKUP_TYPE = os.getenv('BACKUP_TYPE', 'nas')
 
     # NAS バックアップ（SMB/CIFS）
-    NAS_HOST = os.getenv('NAS_HOST', '10.77.233.97')
-    NAS_SHARE = os.getenv('NAS_SHARE', 'share')
+    # デフォルトは空 → 設定画面から設定が必要
+    NAS_HOST = os.getenv('NAS_HOST', '')
+    NAS_SHARE = os.getenv('NAS_SHARE', '')
     NAS_USERNAME = os.getenv('NAS_USERNAME', '')  # 空=匿名アクセス
     NAS_PASSWORD = os.getenv('NAS_PASSWORD', '')
     NAS_MOUNT_POINT = os.getenv('NAS_MOUNT_POINT', '/mnt/nas_backup')
-    NAS_REQUIRED = os.getenv('NAS_REQUIRED', 'True').lower() == 'true'
+    NAS_REQUIRED = os.getenv('NAS_REQUIRED', 'False').lower() == 'true'
     NAS_BACKUP_FOLDER = os.getenv('NAS_BACKUP_FOLDER', 'barcode_app_backups')
 
     # USB バックアップ
+    # デフォルトは空 → 設定画面から設定が必要
     USB_UUID = os.getenv('USB_UUID', '')
     USB_MOUNT_POINT = os.getenv('USB_MOUNT_POINT', '/media/usb_backup')
-    USB_REQUIRED = os.getenv('USB_REQUIRED', 'True').lower() == 'true'
+    USB_REQUIRED = os.getenv('USB_REQUIRED', 'False').lower() == 'true'
     USB_BACKUP_FOLDER = os.getenv('USB_BACKUP_FOLDER', 'barcode_app_backups')
 
     # バックアップ

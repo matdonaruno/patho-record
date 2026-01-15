@@ -12,8 +12,8 @@ from config import Config
 def get_usb_setting(key, default=None):
     """AppSettingsからUSB設定を取得（フォールバック: Config）"""
     try:
-        from flask import current_app
-        if current_app:
+        from flask import has_app_context
+        if has_app_context():
             from models import AppSettings
             value = AppSettings.get(f'usb_{key}')
             if value is not None and value != '':
