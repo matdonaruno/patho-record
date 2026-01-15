@@ -200,31 +200,39 @@ class NASChecker:
             return False
 
     def get_nas_info(self):
-        """NASの共有情報を取得（smbclient）"""
+        """NASの共有情報を取得（smbclient / SMB1対応）"""
         try:
-            cmd = ['smbclient', '-L', f'//{self.host}', '-N']
+            # SMB1/SMB2対応のため複数プロトコルを試行
+            base_cmd = ['smbclient', '-L', f'//{self.host}']
             if self.username:
-                cmd = ['smbclient', '-L', f'//{self.host}',
-                       '-U', f'{self.username}%{self.password}']
-
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-
-            if result.returncode == 0:
-                return {
-                    'success': True,
-                    'output': result.stdout,
-                    'shares': self._parse_shares(result.stdout)
-                }
+                base_cmd.extend(['-U', f'{self.username}%{self.password}'])
             else:
-                return {
-                    'success': False,
-                    'error': result.stderr
-                }
+                base_cmd.append('-N')
+
+            # Buffalo NAS等のSMB1対応
+            protocols = [
+                ['-m', 'NT1'],   # SMB1
+                ['-m', 'SMB2'],  # SMB2
+                [],             # デフォルト
+            ]
+
+            for proto_opts in protocols:
+                cmd = base_cmd + proto_opts
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+
+                if result.returncode == 0 or 'Sharename' in result.stdout:
+                    shares = self._parse_shares(result.stdout)
+                    if shares:
+                        return {
+                            'success': True,
+                            'output': result.stdout,
+                            'shares': shares
+                        }
+
+            return {
+                'success': False,
+                'error': result.stderr if result else 'プロトコル不一致'
+            }
         except Exception as e:
             return {
                 'success': False,

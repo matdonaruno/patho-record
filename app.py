@@ -1010,28 +1010,38 @@ def nas_auto_detect():
     except Exception:
         return jsonify({'error': f'{host} への接続がタイムアウトしました'}), 400
 
-    # 2. smbclient で共有フォルダを検出
+    # 2. smbclient で共有フォルダを検出（SMB1/SMB2/SMB3対応）
     shares = []
+    smb_error = None
     try:
-        result = subprocess.run(
-            ['smbclient', '-L', f'//{host}', '-N'],
-            capture_output=True, text=True, timeout=10
-        )
-        # 共有フォルダをパース
-        in_share_section = False
-        for line in result.stdout.split('\n'):
-            if 'Sharename' in line and 'Type' in line:
-                in_share_section = True
-                continue
-            if in_share_section:
-                if line.strip() == '' or 'Reconnecting' in line:
+        # Buffalo NAS等のSMB1対応のため、複数のプロトコルを試行
+        smb_protocols = [
+            ['smbclient', '-L', f'//{host}', '-N', '-m', 'NT1'],  # SMB1
+            ['smbclient', '-L', f'//{host}', '-N', '-m', 'SMB2'],  # SMB2
+            ['smbclient', '-L', f'//{host}', '-N'],  # デフォルト
+        ]
+
+        for cmd in smb_protocols:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            if result.returncode == 0 or 'Sharename' in result.stdout:
+                # 共有フォルダをパース
+                in_share_section = False
+                for line in result.stdout.split('\n'):
+                    if 'Sharename' in line and 'Type' in line:
+                        in_share_section = True
+                        continue
+                    if in_share_section:
+                        if line.strip() == '' or 'Reconnecting' in line:
+                            break
+                        parts = line.split()
+                        if len(parts) >= 2 and parts[1] == 'Disk':
+                            share_name = parts[0]
+                            # システム共有を除外
+                            if not share_name.startswith('IPC') and not share_name.endswith('$'):
+                                shares.append(share_name)
+                if shares:
                     break
-                parts = line.split()
-                if len(parts) >= 2 and parts[1] == 'Disk':
-                    share_name = parts[0]
-                    # システム共有を除外
-                    if not share_name.startswith('IPC') and not share_name.endswith('$'):
-                        shares.append(share_name)
+            smb_error = result.stderr
     except subprocess.TimeoutExpired:
         return jsonify({'error': 'NASからの応答がタイムアウトしました'}), 400
     except FileNotFoundError:
@@ -1040,13 +1050,21 @@ def nas_auto_detect():
     except Exception as e:
         return jsonify({'error': f'共有フォルダの検出に失敗: {str(e)}'}), 400
 
+    # 共有フォルダが見つからない場合
+    if not shares:
+        error_msg = 'NASの共有フォルダが見つかりません。'
+        if smb_error:
+            error_msg += f' ({smb_error.strip()[:100]})'
+        return jsonify({'error': error_msg}), 400
+
     # 3. 最初の共有フォルダを使用（なければ 'share'）
     detected_share = shares[0] if shares else 'share'
 
     # 4. 設定を自動保存
+    mount_point = '/mnt/nas_backup'
     AppSettings.set('nas_host', host)
     AppSettings.set('nas_share', detected_share)
-    AppSettings.set('nas_mount_point', '/mnt/nas_backup')
+    AppSettings.set('nas_mount_point', mount_point)
     AppSettings.set('nas_backup_folder', 'barcode_app_backups')
     # 認証情報は空（匿名アクセス）
     if not AppSettings.get('nas_username'):
@@ -1056,17 +1074,57 @@ def nas_auto_detect():
 
     logger.info(f"NAS設定を自動検出・保存: {host}/{detected_share} (ユーザー: {user.name})")
 
-    return jsonify({
+    # 5. マウント試行（SMB1/SMB2/SMB3フォールバック）
+    mount_success = False
+    mount_error = None
+    try:
+        # マウントポイントディレクトリを作成
+        if not os.path.exists(mount_point):
+            os.makedirs(mount_point, exist_ok=True)
+
+        smb_path = f"//{host}/{detected_share}"
+        smb_versions = ['1.0', '2.0', '2.1', '3.0']
+
+        for vers in smb_versions:
+            mount_options = f"guest,uid=1000,gid=1000,iocharset=utf8,vers={vers}"
+            result = subprocess.run(
+                ['sudo', 'mount', '-t', 'cifs', smb_path, mount_point, '-o', mount_options],
+                capture_output=True, text=True, timeout=15
+            )
+            if result.returncode == 0:
+                mount_success = True
+                logger.info(f"NASマウント成功 (SMB {vers}): {smb_path}")
+                break
+            else:
+                mount_error = result.stderr.strip()
+                logger.debug(f"SMB {vers} マウント失敗: {mount_error}")
+    except subprocess.TimeoutExpired:
+        mount_error = "マウントタイムアウト"
+    except Exception as e:
+        mount_error = str(e)
+
+    # 結果を返す
+    response_data = {
         'success': True,
         'detected': {
             'host': host,
             'share': detected_share,
             'shares_available': shares,
-            'mount_point': '/mnt/nas_backup',
+            'mount_point': mount_point,
             'backup_folder': 'barcode_app_backups'
         },
-        'message': f'NAS設定を保存しました: {host}/{detected_share}'
-    })
+        'mount_success': mount_success
+    }
+
+    if mount_success:
+        response_data['message'] = f'NAS設定完了: {host}/{detected_share} (マウント成功)'
+    else:
+        response_data['message'] = f'NAS検出完了: {host}/{detected_share}'
+        response_data['mount_warning'] = f'自動マウントに失敗しました。手動でfstab設定が必要な場合があります。'
+        if mount_error:
+            response_data['mount_error'] = mount_error[:200]
+
+    return jsonify(response_data)
 
 
 # ============================================================
@@ -1281,6 +1339,91 @@ def get_fstab_entry():
         return jsonify({
             'success': False,
             'error': 'NAS設定がありません'
+        })
+
+
+@app.route('/settings/fstab-add', methods=['POST'])
+@login_required
+def add_fstab_entry():
+    """fstabエントリを自動追加してマウント"""
+    user = get_current_user()
+    if not user.is_admin:
+        return jsonify({'error': '管理者権限が必要です'}), 403
+
+    from nas_check import generate_fstab_entry, NASChecker
+    entry = generate_fstab_entry()
+
+    if not entry:
+        return jsonify({'success': False, 'error': 'NAS設定がありません'})
+
+    checker = NASChecker()
+    mount_point = checker.mount_point
+
+    try:
+        # 1. 既存のfstabを読み込み
+        with open('/etc/fstab', 'r') as f:
+            fstab_content = f.read()
+
+        # 2. 既にエントリが存在するか確認
+        if mount_point in fstab_content:
+            # 既存エントリがある場合はマウントのみ試行
+            result = subprocess.run(['sudo', 'mount', '-a'], capture_output=True, text=True, timeout=30)
+            if result.returncode == 0 and os.path.ismount(mount_point):
+                return jsonify({
+                    'success': True,
+                    'message': 'fstab設定は既に存在します。マウント完了しました。',
+                    'already_exists': True
+                })
+            else:
+                return jsonify({
+                    'success': False,
+                    'error': f'fstab設定済みですがマウント失敗: {result.stderr.strip()[:100]}'
+                })
+
+        # 3. fstabにエントリを追加
+        add_result = subprocess.run(
+            ['sudo', 'bash', '-c', f'echo "{entry}" >> /etc/fstab'],
+            capture_output=True, text=True, timeout=10
+        )
+        if add_result.returncode != 0:
+            return jsonify({
+                'success': False,
+                'error': f'fstab追加失敗: {add_result.stderr.strip()[:100]}'
+            })
+
+        logger.info(f"fstabエントリ追加: {entry} (ユーザー: {user.name})")
+
+        # 4. マウントポイントディレクトリを作成
+        if not os.path.exists(mount_point):
+            subprocess.run(['sudo', 'mkdir', '-p', mount_point], capture_output=True, timeout=5)
+
+        # 5. mount -a でマウント
+        mount_result = subprocess.run(['sudo', 'mount', '-a'], capture_output=True, text=True, timeout=30)
+
+        if mount_result.returncode == 0 and os.path.ismount(mount_point):
+            return jsonify({
+                'success': True,
+                'message': 'fstab設定を追加し、NASをマウントしました。',
+                'entry': entry
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'message': 'fstab設定を追加しました。再起動後に自動マウントされます。',
+                'warning': f'現在のマウントに失敗: {mount_result.stderr.strip()[:100]}',
+                'entry': entry
+            })
+
+    except PermissionError:
+        return jsonify({
+            'success': False,
+            'error': 'sudo権限がありません。手動でfstabを編集してください。'
+        })
+    except Exception as e:
+        logger.error(f"fstab追加エラー: {e}")
+        return jsonify({
+            'success': False,
+            'error': f'エラー: {str(e)[:100]}'
         })
 
 

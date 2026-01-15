@@ -347,12 +347,18 @@
                 <div class="mt-4" style="border-top: 1px solid var(--border-color); padding-top: 16px;" id="fstabSection" {{ 'style=display:none;' if backup_type == 'usb' else '' }}>
                     <h4 style="margin-bottom: 12px;"><i class="ph ph-terminal"></i> 自動マウント設定（直結運用）</h4>
                     <p class="text-muted" style="font-size: 0.85rem; margin-bottom: 12px;">
-                        Linux起動時にNASを自動マウントするためのfstab設定を生成します。
+                        Linux起動時にNASを自動マウントするためのfstab設定です。
                     </p>
-                    <button class="btn btn-secondary btn-sm" onclick="showFstabEntry()">
-                        <i class="ph ph-code"></i> fstabエントリを表示
-                    </button>
-                    <div id="fstabContent" style="display: none; margin-top: 12px;">
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;">
+                        <button class="btn btn-primary btn-sm" onclick="addFstabEntry()">
+                            <i class="ph ph-plus-circle"></i> fstabに追加してマウント
+                        </button>
+                        <button class="btn btn-secondary btn-sm" onclick="showFstabEntry()">
+                            <i class="ph ph-code"></i> エントリを確認
+                        </button>
+                    </div>
+                    <div id="fstabResult" style="margin-bottom: 12px;"></div>
+                    <div id="fstabContent" style="display: none;">
                         <pre style="background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 0.85rem;"></pre>
                     </div>
                 </div>
@@ -899,6 +905,43 @@
             });
         }
 
+        // fstabエントリ自動追加
+        function addFstabEntry() {
+            const resultDiv = document.getElementById('fstabResult');
+            resultDiv.innerHTML = '<span class="text-muted"><i class="ph ph-spinner"></i> fstab設定を追加中...</span>';
+
+            fetch('/settings/fstab-add', {
+                method: 'POST',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    let html = `<div class="badge badge-success" style="padding: 8px 12px;">
+                        <i class="ph ph-check-circle"></i> ${data.message}
+                    </div>`;
+                    if (data.warning) {
+                        html += `<p style="margin: 8px 0 0 0; font-size: 0.85rem; color: var(--warning);">
+                            <i class="ph ph-warning"></i> ${data.warning}
+                        </p>`;
+                    }
+                    resultDiv.innerHTML = html;
+                    showToast(data.message, 'success');
+                    // 接続テストを自動実行
+                    setTimeout(() => checkStorageStatus(), 500);
+                } else {
+                    resultDiv.innerHTML = `<div class="badge badge-danger" style="padding: 8px 12px;">
+                        <i class="ph ph-x-circle"></i> ${data.error}
+                    </div>`;
+                    showToast(data.error, 'error');
+                }
+            })
+            .catch(error => {
+                resultDiv.innerHTML = '<span class="text-danger">エラーが発生しました</span>';
+                showToast('fstab追加に失敗しました', 'error');
+            });
+        }
+
         // fstabエントリ表示
         function showFstabEntry() {
             const contentDiv = document.getElementById('fstabContent');
@@ -1364,12 +1407,32 @@
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    resultDiv.innerHTML = `
-                        <div class="badge badge-success" style="display: inline-block; padding: 8px 12px;">
-                            <i class="ph ph-check-circle"></i> ${data.message}
-                        </div>
-                    `;
-                    showToast('NAS設定が保存されました', 'success');
+                    let statusHtml = '';
+                    if (data.mount_success) {
+                        statusHtml = `
+                            <div class="badge badge-success" style="display: inline-block; padding: 8px 12px;">
+                                <i class="ph ph-check-circle"></i> ${data.message}
+                            </div>
+                        `;
+                        showToast('NAS設定完了・マウント成功', 'success');
+                    } else {
+                        statusHtml = `
+                            <div style="padding: 12px; background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 8px;">
+                                <div class="badge badge-warning" style="margin-bottom: 8px;">
+                                    <i class="ph ph-warning"></i> ${data.message}
+                                </div>
+                                <p style="margin: 4px 0; font-size: 0.9rem; color: var(--text-sub);">
+                                    ${data.mount_warning || '手動でfstab設定が必要な場合があります'}
+                                </p>
+                                ${data.mount_error ? `<code style="font-size: 0.8rem; color: var(--danger);">${data.mount_error}</code>` : ''}
+                                <p style="margin: 8px 0 0 0; font-size: 0.85rem;">
+                                    <i class="ph ph-info"></i> 「詳細設定」→「fstabエントリを表示」で手動設定できます
+                                </p>
+                            </div>
+                        `;
+                        showToast('NAS検出完了（マウントは手動設定が必要）', 'info');
+                    }
+                    resultDiv.innerHTML = statusHtml;
 
                     // 表示を更新
                     const detected = data.detected;
