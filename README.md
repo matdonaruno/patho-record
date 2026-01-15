@@ -10,6 +10,8 @@
 - 3種類の返却状態管理（結果の返却、ブロックの返却、スライドの返却）
 - 履歴検索・フィルタリング
 - アプリ内アップデート機能（git pull）
+- **USB/NASバックアップ切替**（設定画面から選択可能）
+- **バックアップ診断・検証機能**（管理者向け）
 
 ## インストール (Linux Mint専用)
 
@@ -22,6 +24,39 @@ sudo apt install -y git && git clone https://github.com/matdonaruno/patho-record
 インストール完了後:
 - デスクトップに「Patho Return」アイコンが表示されます
 - アイコンをダブルクリックでアプリが起動します
+
+## 初期設定
+
+### 1. 初回起動
+
+```bash
+./start.sh
+```
+
+### 2. 管理者でログイン
+
+- ユーザー名: `管理者`
+- 初期パスワード: `admin`
+
+### 3. バックアップ設定（設定画面から）
+
+管理者でログイン → 設定画面 → バックアップセクション
+
+#### NASの場合
+| 項目 | 設定例（Buffalo NAS直結） |
+|------|---------------------------|
+| ホスト | `192.168.0.100` |
+| 共有名 | `share` |
+| マウントポイント | `/mnt/nas_backup` |
+| ユーザー名 | （空欄=匿名アクセス） |
+
+#### USBの場合
+| 項目 | 設定例 |
+|------|--------|
+| UUID | `lsblk -o UUID` で確認 |
+| マウントポイント | `/media/usb_backup` |
+
+**設定はデータベースに保存されるため、.envファイルの編集は不要です。**
 
 ## 手動起動
 
@@ -52,35 +87,55 @@ git pull origin main
 
 ### バックアップ
 
-| 保存先 | 場所 | 保持期間 |
-|--------|------|----------|
-| ローカル | `data/app.db` | 365日（自動削除） |
-| USB | `barcode_app_backups/` | 永久保存 |
+| 保存先 | 場所 | タイミング |
+|--------|------|------------|
+| ローカル | `backups/` | 毎日初回起動時 |
+| NAS/USB | 設定したパス | 毎日初回起動時 |
 
 - バックアップはアプリ起動時に自動実行
-- USBが接続されている場合、USBにもコピーされる
+- 設定画面から手動バックアップも可能
+- **バックアップ診断**: 接続状態・書き込みテストを実行
+- **バックアップ検証**: MD5ハッシュでファイル整合性を確認
 
-### 古いデータの参照（365日以前）
+### 古いデータの参照
 
-USBに保存されたバックアップファイルを直接参照できます：
+バックアップファイルを直接参照できます：
 
 ```bash
-# 1. USBのバックアップ一覧を確認
-ls /media/usb_backup/barcode_app_backups/
+# SQLiteで開く（読み取り専用で安全に閲覧）
+sqlite3 -readonly /mnt/nas_backup/barcode_app_backups/20240101_020000_app.db
 
-# 2. SQLiteで開く（読み取り専用で安全に閲覧）
-sqlite3 -readonly /media/usb_backup/barcode_app_backups/20240101_020000_app.db
-
-# 3. データを確認（例：検体一覧）
-SELECT * FROM items WHERE created_at < '2024-01-01';
+# データを確認（例：検体一覧）
+SELECT * FROM item_logs WHERE created_at < '2024-01-01';
 ```
 
 ※ DB Browser for SQLite（GUI）でも開けます
+
+## NAS直結運用（Buffalo NAS）
+
+Buffalo LS-WX1.0TL/R1などSMB1対応NASとLinux PCを直結する場合：
+
+### ネットワーク設定
+| 機器 | IPアドレス |
+|------|-----------|
+| NAS | 192.168.0.100 |
+| Linux PC | 192.168.0.10 |
+
+### 自動マウント設定（オプション）
+
+設定画面の「fstabエントリ表示」からコピーして `/etc/fstab` に追加：
+
+```bash
+sudo nano /etc/fstab
+# 表示されたエントリを追加
+sudo mount -a
+```
 
 ## 動作環境
 
 - **オフライン/LAN環境専用**: インターネット接続なしで動作
 - **単一端末使用**: ローカルネットワーク内での利用を想定
+- **対応OS**: Linux Mint / Ubuntu
 
 ## セキュリティ
 
@@ -89,8 +144,8 @@ SELECT * FROM items WHERE created_at < '2024-01-01';
 このリポジトリには機密情報は含まれていません：
 
 - `.env`（実際の設定）は `.gitignore` で除外
-- `.env.example` はプレースホルダーのみ
 - データベース・ログ・バックアップファイルは除外済み
+- NAS/USB設定はデータベース（AppSettings）に保存
 
 ### 初期管理者アカウント
 
@@ -101,17 +156,11 @@ SELECT * FROM items WHERE created_at < '2024-01-01';
 
 **インストール後、必ずパスワードを変更してください**（設定画面 → ユーザー管理）
 
-### 本番環境での注意事項
-
-1. `.env.example` を `.env` にコピーし、`SECRET_KEY` を変更してください
-2. `DEBUG=False` に設定してください
-3. 管理者パスワードを変更してください
-
 ## 技術スタック
 
 - Python 3 / Flask
 - SQLite
-- Bootstrap 5
+- Phosphor Icons
 - Vanilla JavaScript
 
 ## ライセンス
