@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from functools import wraps
 
 # アプリバージョン
-APP_VERSION = "1.3.1"
+APP_VERSION = "1.4.0"
 GITHUB_REPO = "matdonaruno/patho-record"
 
 from flask import (
@@ -336,6 +336,88 @@ def scan():
         'success': True,
         'item': item.to_dict()
     })
+
+
+# ============================================================
+# ルート: 返却スキャン
+# ============================================================
+
+@app.route('/return/scan', methods=['POST'])
+@login_required
+def return_scan():
+    """返却スキャン - 既存レコードがあれば完了、なければ新規作成して完了"""
+    data = sanitize_input(request.json or {})
+    user = get_current_user()
+
+    try:
+        barcode = validate_barcode(data.get('barcode'))
+    except ValidationError as e:
+        return jsonify({'error': e.message}), 400
+
+    if not barcode:
+        return jsonify({'error': 'バーコードを入力してください'}), 400
+
+    now = datetime.utcnow()
+
+    # 既存の未完了レコードを検索（同じバーコードで最新のもの）
+    existing_item = ItemLog.query.filter(
+        ItemLog.barcode == barcode,
+        ItemLog.completed == False,
+        ItemLog.deleted_at == None
+    ).order_by(ItemLog.scanned_at.desc()).first()
+
+    if existing_item:
+        # 既存レコードを完了にする
+        old_value = existing_item.to_dict()
+        existing_item.completed = True
+        existing_item.completed_at = now
+        existing_item.returned = True
+        existing_item.returned_at = now
+        db.session.commit()
+
+        # 監査ログ
+        create_audit_log('UPDATE', 'item_logs', existing_item.id, old_value=old_value, new_value=existing_item.to_dict())
+
+        logger.info(f"返却スキャン（既存）: バーコード={barcode}, ID={existing_item.id}, ユーザー={user.name}")
+
+        return jsonify({
+            'success': True,
+            'action': 'completed',
+            'message': f'既存レコード #{existing_item.id} を完了しました',
+            'item': existing_item.to_dict()
+        })
+    else:
+        # 新規レコードを作成して即完了
+        return_days_setting = AppSettings.get('return_days', str(Config.DEFAULT_RETURN_DAYS))
+        return_days = int(return_days_setting)
+        expected_return_date = now + timedelta(days=return_days)
+
+        new_item = ItemLog(
+            barcode=barcode,
+            quantity=1,
+            scanned_by_id=user.id,
+            expected_return_date=expected_return_date,
+            returned=True,
+            returned_at=now,
+            completed=True,
+            completed_at=now,
+            notes='返却スキャンで登録'
+        )
+
+        db.session.add(new_item)
+        db.session.commit()
+
+        # 監査ログ
+        create_audit_log('CREATE', 'item_logs', new_item.id, new_value=new_item.to_dict())
+
+        logger.info(f"返却スキャン（新規）: バーコード={barcode}, ID={new_item.id}, ユーザー={user.name}")
+
+        return jsonify({
+            'success': True,
+            'action': 'created',
+            'message': f'新規レコード #{new_item.id} を作成・完了しました',
+            'item': new_item.to_dict()
+        })
 
 
 # ============================================================

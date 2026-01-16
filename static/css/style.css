@@ -1587,3 +1587,23 @@ button.btn-register:active {
 .return-table tr.completed .block-qty-input.has-value {
     background: var(--success);
 }
+
+/* ============================================================
+   返却スキャン完了ハイライト
+   ============================================================ */
+
+.return-table tr.highlight-completed {
+    animation: highlight-pulse 0.5s ease-out;
+    background: var(--success-bg) !important;
+}
+
+@keyframes highlight-pulse {
+    0% {
+        background: var(--success);
+        transform: scale(1.01);
+    }
+    100% {
+        background: var(--success-bg);
+        transform: scale(1);
+    }
+}

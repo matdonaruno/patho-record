@@ -191,6 +191,30 @@
              タブ2: 返却処理
              ============================================================ -->
         <div class="tab-content" id="tabReturn">
+            <!-- 返却スキャン入力カード -->
+            <div class="card scan-card" style="margin-bottom: 20px;">
+                <div class="card-body">
+                    <div class="barcode-input-wrapper" id="returnBarcodeWrapper">
+                        <div class="barcode-icon">
+                            <i class="ph-bold ph-barcode"></i>
+                        </div>
+                        <input type="text"
+                               class="barcode-input"
+                               id="returnBarcodeInput"
+                               placeholder="返却バーコードをスキャン..."
+                               autocomplete="off">
+                        <div class="scan-indicator">
+                            <i class="ph ph-arrow-u-up-left"></i>
+                            <span>返却スキャン</span>
+                        </div>
+                    </div>
+                    <p class="return-scan-hint" style="margin-top: 12px; color: var(--text-secondary); font-size: 13px;">
+                        <i class="ph ph-info"></i>
+                        バーコードをスキャンすると、既存レコードは完了処理、未登録の場合は新規作成して完了します
+                    </p>
+                </div>
+            </div>
+
             <div class="card">
                 <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
                     <h2 class="card-title"><i class="ph ph-arrow-u-up-left"></i> 返却処理</h2>
@@ -422,17 +446,14 @@
                 }, 300);
             });
 
-            // ページ内どこかをクリックしてもスキャンタブなら自動でバーコード入力にフォーカス
-            document.addEventListener('click', function(e) {
-                // 入力フィールド、ボタン、モーダルなどをクリックした場合は無視
-                if (e.target.closest('input, button, select, textarea, .modal, .filter-tab, .main-tab, a')) {
-                    return;
-                }
-                // スキャンタブがアクティブならフォーカス
-                if (document.getElementById('tabScan').classList.contains('active')) {
-                    focusBarcodeInput();
+            // 返却バーコードスキャン入力でEnter → 返却処理実行
+            document.getElementById('returnBarcodeInput').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    submitReturnScan();
                 }
             });
+
         });
 
         // ============================================================
@@ -502,6 +523,57 @@
                 } else {
                     showToast(result.error, 'error');
                     focusBarcodeInput();
+                }
+            })
+            .catch(error => {
+                showToast('エラーが発生しました', 'error');
+            });
+        }
+
+        // ============================================================
+        // 返却スキャン
+        // ============================================================
+
+        function submitReturnScan() {
+            const barcode = document.getElementById('returnBarcodeInput').value.trim();
+
+            if (!barcode) {
+                showToast('バーコードを入力してください', 'error');
+                return;
+            }
+
+            fetch('/return/scan', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify({ barcode: barcode })
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    const actionText = result.action === 'created' ? '新規作成・完了' : '完了';
+                    showToast(`${actionText}: ${result.message}`, 'success');
+                    document.getElementById('returnBarcodeInput').value = '';
+                    document.getElementById('returnBarcodeInput').focus();
+                    loadReturnList();
+                    loadHistory();
+                    updateIncompleteCount();
+
+                    // 完了した行をハイライト
+                    if (result.item && result.item.id) {
+                        setTimeout(() => {
+                            const row = document.querySelector(`tr[data-id="${result.item.id}"]`);
+                            if (row) {
+                                row.classList.add('highlight-completed');
+                                setTimeout(() => row.classList.remove('highlight-completed'), 2000);
+                            }
+                        }, 100);
+                    }
+                } else {
+                    showToast(result.error, 'error');
+                    document.getElementById('returnBarcodeInput').focus();
                 }
             })
             .catch(error => {
