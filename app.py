@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from functools import wraps
 
 # アプリバージョン
-APP_VERSION = "1.4.0"
+APP_VERSION = "1.4.1"
 GITHUB_REPO = "matdonaruno/patho-record"
 
 from flask import (
