@@ -345,7 +345,7 @@ def scan():
 @app.route('/return/scan', methods=['POST'])
 @login_required
 def return_scan():
-    """返却スキャン - 既存レコードがあれば完了、なければ新規作成して完了"""
+    """返却スキャン - 既存レコードがあればフォーカス、なければ新規作成（返却処理はしない）"""
     data = sanitize_input(request.json or {})
     user = get_current_user()
 
@@ -367,27 +367,17 @@ def return_scan():
     ).order_by(ItemLog.scanned_at.desc()).first()
 
     if existing_item:
-        # 既存レコードを完了にする
-        old_value = existing_item.to_dict()
-        existing_item.completed = True
-        existing_item.completed_at = now
-        existing_item.returned = True
-        existing_item.returned_at = now
-        db.session.commit()
-
-        # 監査ログ
-        create_audit_log('UPDATE', 'item_logs', existing_item.id, old_value=old_value, new_value=existing_item.to_dict())
-
-        logger.info(f"返却スキャン（既存）: バーコード={barcode}, ID={existing_item.id}, ユーザー={user.name}")
+        # 既存レコードを返す（フォーカス用）- 返却処理はしない
+        logger.info(f"返却スキャン（既存発見）: バーコード={barcode}, ID={existing_item.id}, ユーザー={user.name}")
 
         return jsonify({
             'success': True,
-            'action': 'completed',
-            'message': f'既存レコード #{existing_item.id} を完了しました',
+            'action': 'found',
+            'message': f'既存レコードを検出しました（#{existing_item.id}）',
             'item': existing_item.to_dict()
         })
     else:
-        # 新規レコードを作成して即完了
+        # 新規レコードを作成（未完了状態で）
         return_days_setting = AppSettings.get('return_days', str(Config.DEFAULT_RETURN_DAYS))
         return_days = int(return_days_setting)
         expected_return_date = now + timedelta(days=return_days)
@@ -397,10 +387,8 @@ def return_scan():
             quantity=1,
             scanned_by_id=user.id,
             expected_return_date=expected_return_date,
-            returned=True,
-            returned_at=now,
-            completed=True,
-            completed_at=now,
+            returned=False,
+            completed=False,
             notes='返却スキャンで登録'
         )
 
@@ -410,12 +398,12 @@ def return_scan():
         # 監査ログ
         create_audit_log('CREATE', 'item_logs', new_item.id, new_value=new_item.to_dict())
 
-        logger.info(f"返却スキャン（新規）: バーコード={barcode}, ID={new_item.id}, ユーザー={user.name}")
+        logger.info(f"返却スキャン（新規作成）: バーコード={barcode}, ID={new_item.id}, ユーザー={user.name}")
 
         return jsonify({
             'success': True,
             'action': 'created',
-            'message': f'新規レコード #{new_item.id} を作成・完了しました',
+            'message': f'該当するレコードが見つかりませんでした。新規登録しました（#{new_item.id}）',
             'item': new_item.to_dict()
         })
 
@@ -533,6 +521,15 @@ def update_item(item_id):
 
     try:
         # 更新可能なフィールド
+        if 'barcode' in data:
+            item.barcode = validate_barcode(data['barcode'])
+        if 'patient_id' in data:
+            # 患者IDはNoneも許可
+            patient_id = data['patient_id']
+            if patient_id:
+                item.patient_id = validate_barcode(patient_id)
+            else:
+                item.patient_id = None
         if 'quantity' in data:
             item.quantity = validate_quantity(data['quantity'], '個数', default=1)
         if 'returned' in data:

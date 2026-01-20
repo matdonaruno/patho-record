@@ -1607,3 +1607,22 @@ button.btn-register:active {
         transform: scale(1);
     }
 }
+
+/* フォーカス用ハイライト（スキャン時） */
+.return-table tr.highlight-focus {
+    animation: highlight-focus-pulse 0.5s ease-out;
+    background: var(--primary-bg) !important;
+    outline: 2px solid var(--primary);
+    outline-offset: -2px;
+}
+
+@keyframes highlight-focus-pulse {
+    0% {
+        background: var(--primary);
+        transform: scale(1.02);
+    }
+    100% {
+        background: var(--primary-bg);
+        transform: scale(1);
+    }
+}

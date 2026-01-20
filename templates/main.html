@@ -210,7 +210,7 @@
                     </div>
                     <p class="return-scan-hint" style="margin-top: 12px; color: var(--text-secondary); font-size: 13px;">
                         <i class="ph ph-info"></i>
-                        バーコードをスキャンすると、既存レコードは完了処理、未登録の場合は新規作成して完了します
+                        バーコードをスキャンすると、既存レコードにフォーカス、未登録の場合は新規作成します（返却処理は手動で行ってください）
                     </p>
                 </div>
             </div>
@@ -265,7 +265,7 @@
                                     <th style="width: 90px;">結果</th>
                                     <th style="width: 110px;">ブロック</th>
                                     <th style="width: 110px;">スライド</th>
-                                    <th style="width: 100px;">操作</th>
+                                    <th style="width: 140px;">操作</th>
                                 </tr>
                             </thead>
                             <tbody id="returnTable">
@@ -319,7 +319,11 @@
                 <input type="hidden" id="editItemId">
                 <div class="form-group mb-4">
                     <label class="form-label">バーコード</label>
-                    <input type="text" class="form-input" id="editBarcode" readonly>
+                    <input type="text" class="form-input" id="editBarcode">
+                </div>
+                <div class="form-group mb-4">
+                    <label class="form-label">患者ID</label>
+                    <input type="text" class="form-input" id="editPatientId" placeholder="患者ID（任意）">
                 </div>
                 <div class="form-group mb-4">
                     <label class="form-label">個数</label>
@@ -553,23 +557,25 @@
             .then(response => response.json())
             .then(result => {
                 if (result.success) {
-                    const actionText = result.action === 'created' ? '新規作成・完了' : '完了';
-                    showToast(`${actionText}: ${result.message}`, 'success');
+                    showToast(result.message, 'success');
                     document.getElementById('returnBarcodeInput').value = '';
                     document.getElementById('returnBarcodeInput').focus();
                     loadReturnList();
                     loadHistory();
                     updateIncompleteCount();
 
-                    // 完了した行をハイライト
+                    // 該当レコードにスクロール＆ハイライト（フォーカス）
                     if (result.item && result.item.id) {
                         setTimeout(() => {
                             const row = document.querySelector(`tr[data-id="${result.item.id}"]`);
                             if (row) {
-                                row.classList.add('highlight-completed');
-                                setTimeout(() => row.classList.remove('highlight-completed'), 2000);
+                                // スクロールして表示
+                                row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                // ハイライト表示
+                                row.classList.add('highlight-focus');
+                                setTimeout(() => row.classList.remove('highlight-focus'), 3000);
                             }
-                        }, 100);
+                        }, 200);
                     }
                 } else {
                     showToast(result.error, 'error');
@@ -745,12 +751,17 @@
                             </div>
                         </td>
                         <td>
-                            <button class="btn ${isComplete ? 'btn-secondary' : 'btn-primary'} btn-sm"
-                                    onclick="completeReturn(${item.id})"
-                                    ${isComplete ? 'disabled' : ''}>
-                                <i class="ph ph-check"></i>
-                                ${isComplete ? '完了済' : '完了'}
-                            </button>
+                            <div class="actions" style="display: flex; gap: 4px;">
+                                <button class="btn btn-secondary btn-icon btn-sm" onclick="showEditModal(${item.id})" title="編集">
+                                    <i class="ph ph-pencil-simple"></i>
+                                </button>
+                                <button class="btn ${isComplete ? 'btn-secondary' : 'btn-primary'} btn-sm"
+                                        onclick="completeReturn(${item.id})"
+                                        ${isComplete ? 'disabled' : ''}>
+                                    <i class="ph ph-check"></i>
+                                    ${isComplete ? '完了済' : '完了'}
+                                </button>
+                            </div>
                         </td>
                     </tr>
                 `;
@@ -1126,6 +1137,7 @@
                     const item = data.item;
                     document.getElementById('editItemId').value = item.id;
                     document.getElementById('editBarcode').value = item.barcode || '';
+                    document.getElementById('editPatientId').value = item.patient_id || '';
                     document.getElementById('editQuantity').value = item.quantity;
                     document.getElementById('editReturned').checked = item.returned;
                     document.getElementById('editBlockQuantity').value = item.block_quantity || 0;
@@ -1146,6 +1158,8 @@
         function saveEdit() {
             const itemId = document.getElementById('editItemId').value;
             const data = {
+                barcode: document.getElementById('editBarcode').value.trim(),
+                patient_id: document.getElementById('editPatientId').value.trim(),
                 quantity: parseInt(document.getElementById('editQuantity').value),
                 returned: document.getElementById('editReturned').checked,
                 block_quantity: parseInt(document.getElementById('editBlockQuantity').value) || 0,
