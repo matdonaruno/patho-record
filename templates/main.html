@@ -359,6 +359,34 @@
         </div>
     </div>
 
+    <!-- 新規登録確認モーダル -->
+    <div class="modal-overlay" id="confirmCreateModal">
+        <div class="modal" style="max-width: 450px;">
+            <div class="modal-header">
+                <h3 class="modal-title"><i class="ph ph-warning"></i> 新規登録の確認</h3>
+                <button class="modal-close" onclick="hideConfirmCreateModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p style="margin-bottom: 16px;">該当するレコードが見つかりませんでした。</p>
+                <p style="margin-bottom: 16px;">以下のバーコードで新規登録しますか？</p>
+                <div style="background: var(--bg-secondary); padding: 16px; border-radius: 8px; text-align: center; margin-bottom: 16px;">
+                    <strong id="confirmBarcode" style="font-size: 18px; font-family: monospace;"></strong>
+                </div>
+                <p style="color: var(--text-secondary); font-size: 13px;">
+                    <i class="ph ph-info"></i>
+                    間違いの場合は「キャンセル」を押してください
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="hideConfirmCreateModal()">キャンセル</button>
+                <button class="btn btn-primary" onclick="confirmCreateReturn()">
+                    <i class="ph ph-plus-circle"></i>
+                    新規登録する
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- トースト -->
     <div class="toast-container" id="toastContainer"></div>
 
@@ -538,6 +566,8 @@
         // 返却スキャン
         // ============================================================
 
+        let pendingCreateBarcode = null; // 新規登録待ちのバーコード
+
         function submitReturnScan() {
             const barcode = document.getElementById('returnBarcodeInput').value.trim();
 
@@ -557,25 +587,29 @@
             .then(response => response.json())
             .then(result => {
                 if (result.success) {
-                    showToast(result.message, 'success');
-                    document.getElementById('returnBarcodeInput').value = '';
-                    document.getElementById('returnBarcodeInput').focus();
-                    loadReturnList();
-                    loadHistory();
-                    updateIncompleteCount();
+                    if (result.action === 'not_found') {
+                        // レコードが見つからない場合、確認モーダルを表示
+                        showConfirmCreateModal(result.barcode);
+                    } else {
+                        // 既存レコードが見つかった場合
+                        showToast(result.message, 'success');
+                        document.getElementById('returnBarcodeInput').value = '';
+                        document.getElementById('returnBarcodeInput').focus();
+                        loadReturnList();
+                        loadHistory();
+                        updateIncompleteCount();
 
-                    // 該当レコードにスクロール＆ハイライト（フォーカス）
-                    if (result.item && result.item.id) {
-                        setTimeout(() => {
-                            const row = document.querySelector(`tr[data-id="${result.item.id}"]`);
-                            if (row) {
-                                // スクロールして表示
-                                row.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                // ハイライト表示
-                                row.classList.add('highlight-focus');
-                                setTimeout(() => row.classList.remove('highlight-focus'), 3000);
-                            }
-                        }, 200);
+                        // 該当レコードにスクロール＆ハイライト（フォーカス）
+                        if (result.item && result.item.id) {
+                            setTimeout(() => {
+                                const row = document.querySelector(`tr[data-id="${result.item.id}"]`);
+                                if (row) {
+                                    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                    row.classList.add('highlight-focus');
+                                    setTimeout(() => row.classList.remove('highlight-focus'), 3000);
+                                }
+                            }, 200);
+                        }
                     }
                 } else {
                     showToast(result.error, 'error');
@@ -583,6 +617,67 @@
                 }
             })
             .catch(error => {
+                showToast('エラーが発生しました', 'error');
+            });
+        }
+
+        // 新規登録確認モーダルを表示
+        function showConfirmCreateModal(barcode) {
+            pendingCreateBarcode = barcode;
+            document.getElementById('confirmBarcode').textContent = barcode;
+            document.getElementById('confirmCreateModal').classList.add('active');
+        }
+
+        // 新規登録確認モーダルを閉じる
+        function hideConfirmCreateModal() {
+            pendingCreateBarcode = null;
+            document.getElementById('confirmCreateModal').classList.remove('active');
+            document.getElementById('returnBarcodeInput').value = '';
+            document.getElementById('returnBarcodeInput').focus();
+        }
+
+        // 新規登録を実行
+        function confirmCreateReturn() {
+            if (!pendingCreateBarcode) {
+                hideConfirmCreateModal();
+                return;
+            }
+
+            fetch('/return/create', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify({ barcode: pendingCreateBarcode })
+            })
+            .then(response => response.json())
+            .then(result => {
+                hideConfirmCreateModal();
+
+                if (result.success) {
+                    showToast(result.message, 'success');
+                    loadReturnList();
+                    loadHistory();
+                    updateIncompleteCount();
+
+                    // 新規作成したレコードにスクロール＆ハイライト
+                    if (result.item && result.item.id) {
+                        setTimeout(() => {
+                            const row = document.querySelector(`tr[data-id="${result.item.id}"]`);
+                            if (row) {
+                                row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                row.classList.add('highlight-focus');
+                                setTimeout(() => row.classList.remove('highlight-focus'), 3000);
+                            }
+                        }, 200);
+                    }
+                } else {
+                    showToast(result.error, 'error');
+                }
+            })
+            .catch(error => {
+                hideConfirmCreateModal();
                 showToast('エラーが発生しました', 'error');
             });
         }
@@ -755,12 +850,17 @@
                                 <button class="btn btn-secondary btn-icon btn-sm" onclick="showEditModal(${item.id})" title="編集">
                                     <i class="ph ph-pencil-simple"></i>
                                 </button>
-                                <button class="btn ${isComplete ? 'btn-secondary' : 'btn-primary'} btn-sm"
-                                        onclick="completeReturn(${item.id})"
-                                        ${isComplete ? 'disabled' : ''}>
-                                    <i class="ph ph-check"></i>
-                                    ${isComplete ? '完了済' : '完了'}
+                                ${isComplete ? `
+                                <button class="btn btn-warning btn-sm" onclick="uncompleteReturn(${item.id})" title="完了を取り消し">
+                                    <i class="ph ph-arrow-counter-clockwise"></i>
+                                    取消
                                 </button>
+                                ` : `
+                                <button class="btn btn-primary btn-sm" onclick="completeReturn(${item.id})">
+                                    <i class="ph ph-check"></i>
+                                    完了
+                                </button>
+                                `}
                             </div>
                         </td>
                     </tr>
@@ -917,6 +1017,37 @@
             .then(result => {
                 if (result.success) {
                     showToast('完了しました！', 'success');
+                    loadReturnList();
+                    loadHistory();
+                    updateIncompleteCount();
+                } else {
+                    showToast(result.error, 'error');
+                }
+            })
+            .catch(error => {
+                showToast('エラーが発生しました', 'error');
+            });
+        }
+
+        // 完了取り消しボタン押下時
+        function uncompleteReturn(itemId) {
+            if (!confirm('完了を取り消しますか？')) return;
+
+            // 完了フラグを解除（completedをfalseに）
+            fetch(`/update/${itemId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify({
+                    completed: false
+                })
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    showToast('完了を取り消しました', 'success');
                     loadReturnList();
                     loadHistory();
                     updateIncompleteCount();
@@ -1296,6 +1427,12 @@
         document.getElementById('editModal').addEventListener('click', function(e) {
             if (e.target === this) {
                 hideEditModal();
+            }
+        });
+
+        document.getElementById('confirmCreateModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                hideConfirmCreateModal();
             }
         });
     </script>
