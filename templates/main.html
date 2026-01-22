@@ -887,8 +887,8 @@
 
         // 結果返却フィールドの切り替え（トグル）- サーバーに保存
         function toggleReturnField(itemId, field, value) {
-            // まずボタンの視覚的な状態を切り替え
-            const button = document.querySelector(`button[onclick*="toggleReturnField(${itemId}"]`);
+            // まずボタンの視覚的な状態を切り替え（field名も含めて特定）
+            const button = document.querySelector(`button[onclick*="toggleReturnField(${itemId}, '${field}'"]`);
             if (button) {
                 if (value) {
                     button.classList.add('active');
