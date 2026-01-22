@@ -63,6 +63,8 @@ class ItemLog(db.Model):
     scanned_by_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
     scanned_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     expected_return_date = db.Column(db.DateTime, nullable=True, index=True)
+    preliminary_report = db.Column(db.Boolean, default=False, index=True)  # 仮報告済み
+    preliminary_report_at = db.Column(db.DateTime, nullable=True)  # 仮報告日時
     returned = db.Column(db.Boolean, default=False, index=True)  # 結果返却済み
     returned_at = db.Column(db.DateTime, nullable=True)  # 結果返却日時
     block_quantity = db.Column(db.Integer, default=0)  # ブロック返却個数
@@ -123,6 +125,8 @@ class ItemLog(db.Model):
             'scanned_by_name': self.scanned_by.name if self.scanned_by else None,
             'scanned_at': self.scanned_at.isoformat() if self.scanned_at else None,
             'expected_return_date': self.expected_return_date.isoformat() if self.expected_return_date else None,
+            'preliminary_report': self.preliminary_report,
+            'preliminary_report_at': self.preliminary_report_at.isoformat() if self.preliminary_report_at else None,
             'returned': self.returned,
             'returned_at': self.returned_at.isoformat() if self.returned_at else None,
             'block_quantity': self.block_quantity,

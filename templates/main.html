@@ -262,6 +262,7 @@
                                     <th>バーコード / メモ</th>
                                     <th style="width: 120px;">患者ID</th>
                                     <th style="width: 100px;">スキャン日</th>
+                                    <th style="width: 90px;">仮報告</th>
                                     <th style="width: 90px;">結果</th>
                                     <th style="width: 110px;">ブロック</th>
                                     <th style="width: 110px;">スライド</th>
@@ -270,7 +271,7 @@
                             </thead>
                             <tbody id="returnTable">
                                 <tr>
-                                    <td colspan="7" class="text-center">
+                                    <td colspan="8" class="text-center">
                                         <div class="loading">
                                             <div class="spinner"></div>
                                         </div>
@@ -328,6 +329,15 @@
                 <div class="form-group mb-4">
                     <label class="form-label">個数</label>
                     <input type="number" class="form-input" id="editQuantity" min="1">
+                </div>
+                <div class="form-group mb-4">
+                    <label class="form-label">仮報告</label>
+                    <div class="toggle-group">
+                        <label class="toggle-item">
+                            <input type="checkbox" class="toggle-checkbox" id="editPreliminaryReport">
+                            <span>仮報告済み</span>
+                        </label>
+                    </div>
                 </div>
                 <div class="form-group mb-4">
                     <label class="form-label">結果返却</label>
@@ -786,7 +796,7 @@
             if (items.length === 0) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="7">
+                        <td colspan="8">
                             <div class="empty-state" style="padding: 40px 0;">
                                 <div class="empty-state-icon"><i class="ph ph-check-circle"></i></div>
                                 <div class="empty-state-title">未完了のデータがありません</div>
@@ -814,6 +824,13 @@
                         </td>
                         <td>${item.patient_id ? escapeHtml(item.patient_id) : '<span class="text-muted">-</span>'}</td>
                         <td>${formatDateShort(scannedAt)}</td>
+                        <td>
+                            <button class="return-toggle ${item.preliminary_report ? 'active' : ''}"
+                                    onclick="toggleReturnField(${item.id}, 'preliminary_report', ${!item.preliminary_report})">
+                                <i class="ph ${item.preliminary_report ? 'ph-fill ph-check-circle' : 'ph ph-circle'}"></i>
+                                ${item.preliminary_report ? '済' : '未'}
+                            </button>
+                        </td>
                         <td>
                             <button class="return-toggle ${item.returned ? 'active' : ''}"
                                     onclick="toggleReturnField(${item.id}, 'returned', ${!item.returned})">
@@ -1270,6 +1287,7 @@
                     document.getElementById('editBarcode').value = item.barcode || '';
                     document.getElementById('editPatientId').value = item.patient_id || '';
                     document.getElementById('editQuantity').value = item.quantity;
+                    document.getElementById('editPreliminaryReport').checked = item.preliminary_report;
                     document.getElementById('editReturned').checked = item.returned;
                     document.getElementById('editBlockQuantity').value = item.block_quantity || 0;
                     document.getElementById('editSlideQuantity').value = item.slide_quantity || 0;
@@ -1292,6 +1310,7 @@
                 barcode: document.getElementById('editBarcode').value.trim(),
                 patient_id: document.getElementById('editPatientId').value.trim(),
                 quantity: parseInt(document.getElementById('editQuantity').value),
+                preliminary_report: document.getElementById('editPreliminaryReport').checked,
                 returned: document.getElementById('editReturned').checked,
                 block_quantity: parseInt(document.getElementById('editBlockQuantity').value) || 0,
                 slide_quantity: parseInt(document.getElementById('editSlideQuantity').value) || 0,

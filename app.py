@@ -558,6 +558,14 @@ def update_item(item_id):
                 item.patient_id = None
         if 'quantity' in data:
             item.quantity = validate_quantity(data['quantity'], '個数', default=1)
+        if 'preliminary_report' in data:
+            new_preliminary = bool(data['preliminary_report'])
+            # 仮報告が初めてチェックされた時にタイムスタンプを記録
+            if new_preliminary and not item.preliminary_report:
+                item.preliminary_report_at = now
+            elif not new_preliminary:
+                item.preliminary_report_at = None
+            item.preliminary_report = new_preliminary
         if 'returned' in data:
             new_returned = bool(data['returned'])
             # 結果返却が初めてチェックされた時にタイムスタンプを記録
